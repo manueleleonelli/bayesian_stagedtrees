@@ -112,11 +112,21 @@ mcmc <- function(tree, it, a = 1, prior = "Friedman", burn = 0, thin = 0, scope 
     for(v in scope){
       tree <- tree1 <- chain[i+1][[1]]
       ## Sampling of two vertices
-      vertices <- sample(length(tree$stages[[v]]), 2, replace = F) 
-      if(tree$stages[[v]][vertices[1]] != tree$stages[[v]][vertices[2]]){# MERGE MOVE
+      #vertices <- sample(length(tree$stages[[v]]), 2, replace = F) 
+      
+      ## Deciding Move
+      move <- sample(c("merge","split"),1)
+      if(length(unique(tree$stages[[v]]))== 1){move <- "split"}
+      if(length(unique(tree$stages[[v]]))== length(tree$stages[[v]])){move <- "merge"}
+      
+      #if(tree$stages[[v]][vertices[1]] != tree$stages[[v]][vertices[2]]){# MERGE MOVE
+      
+      if(move == "merge"){
         
-        ## Deriving the staging indexes
-        vertices <- tree$stages[[v]][vertices]
+        inverse_freq <- 1/table(tree$stages[[v]])[unique(tree$stages[[v]])]
+        prob <- inverse_freq / sum(inverse_freq)
+        vertices <- sample(unique(tree$stages[[v]]), 2, replace = F, prob = prob)
+        names(prob) <- unique(tree$stages[[v]])
         
         ## Computing counts for the first stage
         ix1 <- tree$stages[[v]] == vertices[1]
@@ -147,24 +157,40 @@ mcmc <- function(tree, it, a = 1, prior = "Friedman", burn = 0, thin = 0, scope 
         
         ## Compute transition probability ratio
         
-      ## ChatGPT Transition  
-       #trans <-   lchoose(sum(ix1+ix2),2)  + lchoose((sum(ix1+ix2)-2),(sum(ix1)-1)) +log(0.5)*(sum(ix1+ix2)-2) - log(sum(ix1)) - log(sum(ix2)) 
-     
-      ## Uniform transition  
-      # trans <-   log(0.5)*(sum(ix1+ix2)-2)
+        #trans <- 0 
         
+        ## Transition over stages
+        #pos_stages <-  names(table(tree1$stages[[v]])[table(tree1$stages[[v]]) > 1])
+        #trans <-  -log(length(pos_stages)) -lchoose(sum(ix1+ix2),2) +log(0.5)*(sum(ix1+ix2)-2) - (-lchoose(length(unique(tree$stages[[v]])),2))
+        
+        ## ChatGPT Transition  
+        #trans <-   lchoose(sum(ix1+ix2),2)  + lchoose((sum(ix1+ix2)-2),(sum(ix1)-1)) +log(0.5)*(sum(ix1+ix2)-2) - log(sum(ix1)) - log(sum(ix2)) 
+        
+        ## Uniform transition  
+        # trans <-   log(0.5)*(sum(ix1+ix2)-2)
+        
+        ## Transition over weigthed stages
+        tree1$stages[[v]][which(tree1$stages[[v]]==vertices[2])] <- vertices[1]
+        tree1 <- sevt_fit(tree1, scope=v)
+        prob_new <- table(tree1$stages[[v]])[table(tree1$stages[[v]]) > 1]/sum(table(tree1$stages[[v]])[table(tree1$stages[[v]]) > 1])
+        trans <-  -log(prob_new[vertices[1]]) -lchoose(sum(ix1+ix2),2) + log(0.5)*(sum(ix1+ix2)-2)  - (log(prob[vertices[1]]*prob[vertices[2]]/(1-prob[vertices[2]]) +prob[vertices[1]]*prob[vertices[2]]/(1-prob[vertices[1]])) )
+          
         ## Decide on MCMC move
         if(runif(1)<= r_12 + r_1 + r_2 + lp + trans){
           tree1$stages[[v]][which(tree1$stages[[v]]==vertices[2])] <- vertices[1]
-          chain[[i+1]] <- stndnaming(sevt_fit(tree1, scope=v)) 
+          chain[[i+1]] <- stndnaming(tree1) 
           acc[match(v, scope)] <- acc[match(v, scope)]+1
           priors <- comp_prior(chain[[i+1]], a)
-          }
+        }
         
       } else { ## SPLIT MOVE
         
         ## Get name of stage
-        name <- tree$stages[[v]][vertices[1]]
+        probs <- table(tree$stages[[v]])[table(tree$stages[[v]]) > 1]/sum(table(tree$stages[[v]])[table(tree$stages[[v]]) > 1])
+        pos_stages <-  names(probs)
+        name <- sample(pos_stages,1,prob = probs)
+        vertices <- sample(which(tree$stages[[v]]==name),2,replace=F)
+        
         ## Get all vertices in the same stage minus those sampled
         target_indices <- setdiff(which(tree$stages[[v]] == name), vertices)
         ## Create new stage
@@ -199,17 +225,24 @@ mcmc <- function(tree, it, a = 1, prior = "Friedman", burn = 0, thin = 0, scope 
         r_1 <- -(-lgamma(sum(pr_a)) + lgamma(sum(tt_a+pr_a)) + sum(lgamma(pr_a)) - sum(lgamma(tt_a+pr_a)) )
         r_2 <-  -(- lgamma(sum(pr_b)) + lgamma(sum(tt_b+pr_b)) + sum(lgamma(pr_b)) - sum(lgamma(tt_b+pr_a)))
         r_12 <- -(+lgamma(sum(pr_b+pr_a)) - lgamma(sum(pr_b+pr_a+tt_a+tt_b)) - sum(lgamma(pr_b+pr_a)) + sum(lgamma(tt_a+tt_b+pr_a+pr_b)))
-       
+        
         ## Compute terms for tree prior ratio
-         if(prior == "Heckerman"){lp <- -(-log(beta[[v]]))} else if(prior == "Friedman") {lp <- -(log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]]))))} else if(prior == "Pensar"){lp <- -(-tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1))} else {lp <- 1}
+        if(prior == "Heckerman"){lp <- -(-log(beta[[v]]))} else if(prior == "Friedman") {lp <- -(log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]]))))} else if(prior == "Pensar"){lp <- -(-tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1))} else {lp <- 1}
         
         ## Compute ratio of transition probabilities
         
         ## ChatGPT Transition
         #trans <-  - (lchoose(sum(ix1+ix2),2)  + lchoose((sum(ix1+ix2)-2),(sum(ix1)-1)) +log(0.5)*(sum(ix1+ix2)-2) - log(sum(ix1)) - log(sum(ix2)) )
-       
+        
         ## Uniform Transition
         # trans <- -(log(0.5)*(sum(ix1+ix2)-2))
+        
+        
+        #trans <-   (-lchoose(length(unique(tree1$stages[[v]])),2)) - (-log(length(pos_stages)) -lchoose(sum(ix1+ix2),2) + log(0.5)*(sum(ix1+ix2)-2))
+        
+        inverse_freq <- 1/table(tree1$stages[[v]])[unique(tree1$stages[[v]])]
+        prob_new <- inverse_freq / sum(inverse_freq)
+        trans <-  log(prob_new[name]*prob_new["a"]/(1-prob_new["a"]) +prob_new[name]*prob_new["a"]/(1-prob_new[name])) - (-log(prob[name]) -lchoose(length(target_indices) +2, 2) + length(target_indices)*log(0.5))
         
         if(runif(1)<= r_12 + r_1 + r_2 + lp + trans){
           chain[[i+1]] <- stndnaming(tree1) 

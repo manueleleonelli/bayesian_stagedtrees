@@ -46,16 +46,16 @@ tree <- stndnaming(stages_hc(full(data)))
 ### scope: which variables to consider
 ### beta: additional input for Heckerman prior
 
-it <- 500000
+it <- 5000
 a <- 1
-prior <- "Friedman"
+prior <- "Heckerman"
 scope <- c("monitor")
-#beta <- list(monitor = 0.8)
+beta <- list(monitor = 0.7)
 
-ciao <- mcmc(tree,it = it,a = a,prior = prior, scope = scope)
+ciao <- mcmc(tree,it = it,a = a,prior = prior, scope = scope, beta = beta)
 
 ## Burn-in and thinning
-indices <- seq(10000, length(ciao), by = 500)
+indices <- seq(10000, length(ciao), by = 100)
 result <- ciao[indices]
 
 ## Check some measure of convergence
