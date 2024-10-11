@@ -40,19 +40,22 @@ data <- data[,c(3,4,5,1,2)]
 ### Choose a starting tree for the MCMC and subset of data for uncertainty
 tree <- stndnaming(stages_hc(full(data)))
 
+
+
+tree <- stndnaming(stages_hc(indep(data)))
 ### tree: starting input of the MCMC
 ### a: imaginary sample size for edge probability priors
 ### prior: choice of prior distribution over staged tree space
 ### scope: which variables to consider
 ### beta: additional input for Heckerman prior
 
-it <- 5000
+it <- 50000
 a <- 1
 prior <- "Heckerman"
 scope <- c("monitor")
-beta <- list(monitor = 0.7)
+beta <- list(monitor = 0.3)
 
-ciao <- mcmc(tree,it = it,a = a,prior = prior, scope = scope, beta = beta)
+ciao <- mcmc(tree,it = it,a = a,prior = prior, scope = scope, beta=beta)
 
 ## Burn-in and thinning
 indices <- seq(10000, length(ciao), by = 100)
