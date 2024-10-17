@@ -39,27 +39,36 @@ data <- data[,c(3,4,5,1,2)]
 
 ### Choose a starting tree for the MCMC and subset of data for uncertainty
 tree <- stndnaming(stages_hc(full(data)))
-
-
-
-tree <- stndnaming(stages_hc(indep(data)))
 ### tree: starting input of the MCMC
 ### a: imaginary sample size for edge probability priors
 ### prior: choice of prior distribution over staged tree space
 ### scope: which variables to consider
 ### beta: additional input for Heckerman prior
 
-it <- 50000
+
+#Simulate data
+rm(list = ls())
+source("data_simulation.R")
+
+
+
+n_burn <- 1000
+thin <- 2
+n_save <- 1000
 a <- 1
 prior <- "Heckerman"
-scope <- c("monitor")
+scope <- names(tree$stages)[length(names(tree$stages))]
 beta <- list(monitor = 0.3)
 
-ciao <- mcmc(tree,it = it,a = a,prior = prior, scope = scope, beta=beta)
+
+#FOR CRP
+update_CRP <- TRUE
+update_SM <- TRUE
+source("mcmc_crp.R")
+ciao <- mcmc_crp(tree,n_save = n_save,n_burn = n_burn, thin = thin, kappa = 1, a = 1,prior = prior, scope = scope, beta=beta, update_SM=update_SM, update_CRP=update_CRP)
 
 ## Burn-in and thinning
-indices <- seq(10000, length(ciao), by = 100)
-result <- ciao[indices]
+result <- ciao$chain_out
 
 ## Check some measure of convergence
 x <- lapply(result,logLik)

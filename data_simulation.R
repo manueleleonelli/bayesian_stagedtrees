@@ -9,7 +9,7 @@ tree_def <- list(X1 = c("no","yes"),
 tree_def <- sevt(tree_def, full= F)
 
 ## Creo partizione per X5 (dove andiamo a fare clustering)
-tree_def$stages$X5 <- c("1","2","3","4","1","2","5","6","1","2","3","4","1","2","5","6")
+tree_def$stages$X5 <- c("1","1","1","1","1","2","2","2","2","2","3","3","3","3","3","3")
 
 ## Assegno probabilita all'albero
 ## Per tutte le variabili precedenti metto 50/50 cosi da avere osservazioni in tutti i paths
@@ -29,4 +29,4 @@ tree_def$prob$X5 <- list("1" = c(0.2,0.8),
 data <- sample_from(tree_def, size = 2000, seed=2024)
 
 ## Costruisco un albero iniziale se vuoi utilizzarlo
-tree <- stages_hc(full(data))
+tree <- stndnaming(stages_hc(full(data)))
