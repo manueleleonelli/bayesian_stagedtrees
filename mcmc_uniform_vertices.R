@@ -1,6 +1,6 @@
 
 ### Function to compute the prior probability of edge probabilities using imaginary sample size
-comp_prior <- function(tree, a = 1){
+comp_prior <- function(tree, a = 16){
   priors <- tree$stages
   nlev_full <- unlist(lapply(tree$tree, length)) # Number of levels of each variable
   K <-  prod(nlev_full) # Number of root to leaf paths
@@ -143,7 +143,7 @@ mcmc <- function(tree, it, a = 1, prior = "Friedman", burn = 0, thin = 0, scope 
         
         
         ## Compute Tree prior ratio
-        #if(prior == "Heckerman"){lp <- -log(beta[[v]])} else if(prior == "Friedman") {lp <- log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]])))} else if(prior == "Pensar"){lp <- -tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1)} else {lp <- 1}
+        if(prior == "Heckerman"){lp <- -log(beta[[v]])} else if(prior == "Friedman") {lp <- log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]])))} else if(prior == "Pensar"){lp <- -tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1)} else {lp <- 1}
         lp <- 0
         ## Compute transition probability ratio
         
@@ -151,9 +151,9 @@ mcmc <- function(tree, it, a = 1, prior = "Friedman", burn = 0, thin = 0, scope 
         #trans <-   lchoose(sum(ix1+ix2),2)  + lchoose((sum(ix1+ix2)-2),(sum(ix1)-1)) +log(0.5)*(sum(ix1+ix2)-2) - log(sum(ix1)) - log(sum(ix2)) 
         
         ## Uniform transition  
-         #trans <-   log(0.5)*(sum(ix1+ix2)-2) -lchoose(sum(ix1+ix2),2) - log(sum(ix1+ix2)) + lchoose(length(tree$stages[[v]]),2)
+        trans <-   log(0.5)*(sum(ix1+ix2)-2) -lchoose(sum(ix1+ix2),2) - log(sum(ix1+ix2)) + lchoose(length(tree$stages[[v]]),2)
        
-        trans <- 0
+        #trans <- 0
          
         ## Decide on MCMC move
         if(runif(1)<= r_12 + r_1 + r_2 + lp + trans){
@@ -203,10 +203,10 @@ mcmc <- function(tree, it, a = 1, prior = "Friedman", burn = 0, thin = 0, scope 
         r_12 <- -(+lgamma(sum(pr_b+pr_a)) - lgamma(sum(pr_b+pr_a+tt_a+tt_b)) - sum(lgamma(pr_b+pr_a)) + sum(lgamma(tt_a+tt_b+pr_a+pr_b)))
         
         ## Compute terms for tree prior ratio
-        #if(prior == "Heckerman"){lp <- -(-log(beta[[v]]))} else if(prior == "Friedman") {lp <- -(log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]]))))} else if(prior == "Pensar"){lp <- -(-tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1))} else {lp <- 1}
+        if(prior == "Heckerman"){lp <- -(-log(beta[[v]]))} else if(prior == "Friedman") {lp <- -(log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]]))))} else if(prior == "Pensar"){lp <- -(-tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1))} else {lp <- 1}
         
-        lp <- 0
-        trans <- 0
+        #lp <- 0
+        #trans <- 0
         ## Compute ratio of transition probabilities
         
         ## ChatGPT Transition
