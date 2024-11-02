@@ -226,7 +226,7 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
           nj_new <- table(c_new)
           
           ## Fit new tree
-          tree_new <- sevt_fit(tree_new, scope = v)
+          tree_new <- sevt_fit(tree_new)
           # ## Compute edges prior for new tree
           # priors_new <- comp_prior(tree_new, a)
           
@@ -296,7 +296,7 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
           tree_new$stages[[v]][target_indices] <- assignments
           
           ## Fit new tree
-          tree_new <- sevt_fit(tree_new, scope = v)
+          tree_new <- sevt_fit(tree_new)
           # ## Compute edges prior for new tree
           # priors_new <- comp_prior(tree_new, a)
           c_new <- tree_new$stages[[v]]
@@ -324,7 +324,7 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
           }
           
           ## Computing counts for the second stage
-          ix_SM <- tree$stages[[v]] == current_stage
+          ix_SM <- (tree$stages[[v]] == current_stage)
           # pr_SM <- priors[[v]][names(priors[[v]]) == current_stage]
           pr_SM <- priors_iv
           if (sum(ix_SM) > 1) {
@@ -386,7 +386,7 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
       alloc_v_out[[iter]] <- alloc_v
       nj_v_out[[iter]] <- nj_v[[iv]]
       K_v_out[iter,] <- K_v 
-      chain_out[[iter]] <- stndnaming(sevt_fit(tree, scope = v)) 
+      chain_out[[iter]] <- stndnaming(sevt_fit(tree)) 
     }
     
     setTxtProgressBar(pb, it)
@@ -396,9 +396,9 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
   
   if(update_SM){
     print("merge ar")
-    print(Merge_count / n_tot)
+    print(Merge_count / n_tot / n_v)
     print("split ar")
-    print(Split_count / n_tot)
+    print(Split_count / n_tot / n_v)
   }
   
   OUTPUT_MCMC <- list("alloc_v_out" = alloc_v_out, "nj_v_out" = nj_v_out, "K_v_out" = K_v_out, "chain_out" = chain_out)
