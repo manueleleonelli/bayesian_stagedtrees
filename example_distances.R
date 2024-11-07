@@ -68,6 +68,9 @@ update_SM <- TRUE
 library("e1071")
 
 source("mcmc_crp_distances.R")
+
+tree <- full(Titanic)
+scope <- "Survived"
 ciao <- mcmc_crp_distances(tree,n_save = n_save,n_burn = n_burn, thin = thin, a = 1, kappa = 1, csi = 0.1, prior = prior, scope = scope, beta=beta, update_SM=update_SM, update_CRP=update_CRP)
 
 ## Burn-in and thinning

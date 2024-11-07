@@ -80,10 +80,19 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
   #these are fixed because the tree is fixed
   n_vars <- length(tree$tree)
   n_cat <- apply(matrix(1:n_vars,ncol = 1), 1, function(i){length(tree$prob[[i]][[1]])})
-  tree_paths <- matrix(0, prod(n_cat[-n_vars]), n_vars)
-  for(iv in 2:n_vars){
-    exp_prod <- prod(n_cat[-c(n_vars:(n_vars-iv+1))])
-    tree_paths[,iv] <- rep(c(rep(1,exp_prod),rep(0,exp_prod)),2^(iv-2))
+  n_paths <- prod(n_cat[-n_vars])
+  tree_paths <- matrix(0, n_paths, n_vars)
+  for(iv in 1:(n_vars-1)){
+    n_cat_iv <- n_cat[iv]
+    if(iv < n_vars - 1){
+      exp_prod <- prod(n_cat[(iv+1):(n_vars-1)])
+    }else{
+      exp_prod <- 1
+    }
+    rep_cat <- c(apply(matrix(1:n_cat_iv, ncol = 1), 1, function(i){rep(i,exp_prod)}))
+    
+    #Use recycling
+    tree_paths[,iv+1] <- rep_cat
   }
   
   #Now remove duplicates
