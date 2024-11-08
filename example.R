@@ -38,7 +38,7 @@ data <- data[,c(3,4,5,1,2)]
 
 
 ### Choose a starting tree for the MCMC and subset of data for uncertainty
-tree <- stndnaming(stages_hc(full(data)))
+tree <- stndnaming(stages_hc(full(data,order = c("arrest","breech","nullipar","monitor","cesarean"))))
 ### tree: starting input of the MCMC
 ### a: imaginary sample size for edge probability priors
 ### prior: choice of prior distribution over staged tree space
@@ -52,8 +52,8 @@ source("data_simulation.R")
 
 
 
-n_burn <- 1000
-thin <- 2
+n_burn <- 4000
+thin <- 25
 n_save <- 1000
 a <- 1
 prior <- "Heckerman"
@@ -65,6 +65,7 @@ beta <- list(monitor = 0.3)
 update_CRP <- TRUE
 update_SM <- TRUE
 source("mcmc_crp.R")
+scope <- "monitor"
 ciao <- mcmc_crp(tree,n_save = n_save,n_burn = n_burn, thin = thin, kappa = 1, a = 1,prior = prior, scope = scope, beta=beta, update_SM=update_SM, update_CRP=update_CRP)
 
 ## Burn-in and thinning
@@ -94,7 +95,7 @@ process_variable <- function(v, result, estimate_B, estimate_VI, lower, upper, h
   estimate_VI$stages[[v]] <- salso(mat, loss = "VI")
   
   # Compute credible ball for VI distance
-  ball <- credibleball(estimate_VI$stages[[v]], mat, c.dist = "VI", alpha = 0.1)
+  ball <- credibleball(estimate_VI$stages[[v]], mat, c.dist = "VI", alpha = 0.05)
   
   # Update lower, upper, and horizontal stages
   lower$stages[[v]] <- ball$c.lowervert[1,]
