@@ -59,14 +59,6 @@ tree_def$prob$X6 <- list("1" = c("no"= 0.2,"yes" = 0.8),
                          "7" = c("no"= 0.8,"yes" = 0.2),
                          "8" = c("no"= 0.9,"yes" = 0.1))
 
-## Simulo i dati dall'albero
-data <- sample_from(tree_def, size = 2000, seed=2024)
-tree <- stndnaming(stages_fbhc(full(data)))
-while(any(tree$ctables$X5[,1]== 0 & tree$ctables$X5[,2]== 0)){
-  data <- sample_from(tree_def, size = N)
-  tree <- stndnaming(stages_fbhc(full(data)))
-}
-
 n_burn <- 1000
 thin <- 2
 n_save <- 1000
@@ -85,7 +77,7 @@ source("mcmc_crp_distances.R")
 # Define vectors of values for csi, kappa, and sample sizes
 csi_values <- c(0, 1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 1)
 kappa_values <- c(0.01, 0.05, 0.1, 0.5, 1, 5)
-sample_sizes <- c(500, 1000, 2500, 5000, 10000)
+sample_sizes <- c(500, 1000, 2500, 5000,7500, 10000)
 
 # Initialize a list to store estimate_VI results
 estimate_VI_results <- list()
@@ -105,6 +97,9 @@ for (sample_size in sample_sizes) {
   # Loop over all combinations of csi and kappa for the current sample size
   for (csi_val in csi_values) {
     for (kappa_val in kappa_values) {
+      
+      estimate_VI_results[[paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)]] <- list()
+      
       # Run MCMC for each combination of csi and kappa
       ciao <- mcmc_crp_distances(tree, n_save = n_save, n_burn = n_burn, thin = thin, 
                                  a = a, kappa = kappa_val, csi = csi_val, prior = prior, 
@@ -114,10 +109,13 @@ for (sample_size in sample_sizes) {
       # Burn-in and thinning
       result <- ciao$chain_out
       
-      # Initialize estimate_VI for the current run
+      # Initialize the storage for current combination
       estimate_VI <- result[[1]]
       
-      # Process each variable in scope and calculate estimate_VI
+      # Store data object
+      estimate_VI_results[[paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)]][["data"]] <- data
+      
+      # Store salso results for each variable in scope
       for (v in scope) {
         # Create matrix for variable v
         mat <- t(sapply(result, function(res) res$stages[[v]]))
@@ -126,11 +124,20 @@ for (sample_size in sample_sizes) {
         estimate_VI$stages[[v]] <- salso(mat, loss = "VI")
       }
       
-      # Store estimate_VI in the results list with a unique name for each combination
-      estimate_VI_results[[paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)]] <- estimate_VI
+      # Store the ce_randomized diff() output for each model
+      ce_diffs <- sapply(result, function(model) {
+        diff(ce_randomized(sevt_fit(model, data, lambda = a/2), outcome = "X6", treatment = "X5")[, 2])
+      })
+      
+      # Add ce_diffs to the estimate_VI object
+      estimate_VI_results[[paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)]][["ce_diffs"]] <- ce_diffs
+      
+      # Store the result in the main list
+      estimate_VI_results[[paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)]][["tree"]] <- estimate_VI
     }
   }
 }
+
 
 library(ggplot2)
 library(reshape2)
@@ -147,18 +154,18 @@ for (key in names(estimate_VI_results)) {
   kappa <- as.numeric(parts[6])
   
   # Calculate the number of unique stages for X6
-  unique_stages <- length(unique(estimate_VI_results[[key]]$stages$X6))
-  hamming <- sum(hamming_stages(tree_def,estimate_VI_results[[key]],return_tree = T)$X6)
-  locals <- length(as_parentslist(estimate_VI_results[[key]])$X6$local)
-  parents <- length(as_parentslist(estimate_VI_results[[key]])$X6$parents)
-  rand <- rand.index(as.numeric(tree_def$stages$X6),as.numeric(estimate_VI_results[[key]]$stages$X6))
+  unique_stages <- length(unique(estimate_VI_results[[key]]$tree$stages$X6))
+  hamming <- sum(hamming_stages(tree_def,estimate_VI_results[[key]]$tree,return_tree = T)$X6)
+  locals <- length(as_parentslist(estimate_VI_results[[key]]$tree)$X6$local)
+  parents <- length(as_parentslist(estimate_VI_results[[key]]$tree)$X6$parents)
+  rand <- rand.index(as.numeric(tree_def$stages$X6),as.numeric(estimate_VI_results[[key]]$tree$stages$X6))
   # Add the result to the dataframe
   results <- rbind(results, c( sample_size, csi, kappa, unique_stages,hamming,locals,parents,rand))
 }
 
 results <- as.data.frame(results)
 colnames(results) <- c("Sample_Size", "Csi","Kappa","Unique_Stages","Hamming","Locals","Parents","Rand")
-results$Unique_Stages <- results$Unique_Stages - 8
+results$Unique_Stages <- results$Unique_Stages - length(unique(tree_def$stages$X6))
 
 heatmap_list <- list()
 for (sample_size in sample_sizes) {
