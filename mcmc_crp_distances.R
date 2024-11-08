@@ -71,7 +71,7 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
     n_out_v[iv] <- length(tree$prob[[v]][[1]])
     alloc_v[[iv]] <- tree$stages[[v]]
     # priors_v[[iv]] <- rep(1/2^(N_v[iv]-1)/n_out_v[iv],n_out_v[iv]) 
-    priors_v[[iv]] <- rep(1/2,n_out_v[iv]) 
+    priors_v[[iv]] <- rep(a/n_out_v[iv],n_out_v[iv]) 
   }
   K_v <- sapply(alloc_v, function(x){length(unique(x))})
   nj_v <- lapply(alloc_v, table)

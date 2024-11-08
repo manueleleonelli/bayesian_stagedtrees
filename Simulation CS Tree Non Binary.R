@@ -156,7 +156,7 @@ for (sample_size in sample_sizes) {
   data_subset <- subset(results, Sample_Size == sample_size)
   
   # Create heatmap
-  p <- ggplot(data_subset, aes(x = as.factor(Kappa), y = as.factor(Csi), fill = Parents)) +
+  p <- ggplot(data_subset, aes(x = as.factor(Kappa), y = as.factor(Csi), fill = Hamming)) +
     geom_tile() +
     scale_fill_gradient2(name = "Rand", low = "red", mid = "white", high = "blue", midpoint = 0) +
     labs(title = paste("Sample Size:", sample_size), x = "Kappa", y = "Csi") +
