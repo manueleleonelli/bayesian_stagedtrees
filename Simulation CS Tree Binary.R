@@ -36,28 +36,28 @@ tree_def <- stndnaming(tree_def)
 ## Assegno probabilita all'albero
 ## Per tutte le variabili precedenti metto 50/50 cosi da avere osservazioni in tutti i paths
 tree_def$prob <- list()
-tree_def$prob$X1 <- list("NA"=c(0.6,0.4))
-tree_def$prob$X2 <- list("1" = c(0.5,0.5),
-                         "2" = c(0.4,0.6))
-tree_def$prob$X3 <- list("1" = c(0.4,0.6),
-                         "2" = c(0.5,0.5),
-                         "3" = c(0.7,0.3))
-tree_def$prob$X4 <- list("1" = c(0.5,0.5),
-                         "2" = c(0.4,0.6),
-                         "3" = c(0.3,0.7),
-                         "4" = c(0.7,0.3))
-tree_def$prob$X5 <- list("4" = c(0.5,0.5),
-                         "3" = c(0.4,0.6),
-                         "2" = c(0.3,0.7),
-                         "1" = c(0.7,0.3))
-tree_def$prob$X6 <- list("1" = c(0.2,0.8),
-                         "2" = c(0.3,0.7),
-                         "3" = c(0.4,0.6),
-                         "4" = c(0.5,0.5),
-                         "5" = c(0.6,0.4),
-                         "6" = c(0.7,0.3),
-                         "7" = c(0.8,0.2),
-                         "8" = c(0.9,0.1))
+tree_def$prob$X1 <- list("NA"=c("no"= 0.6,"yes" = 0.4))
+tree_def$prob$X2 <- list("1" = c("no"= 0.5,"yes" = 0.5),
+                         "2" = c("no"= 0.4,"yes" = 0.6))
+tree_def$prob$X3 <- list("1" = c("no"= 0.4,"yes" = 0.6),
+                         "2" = c("no"= 0.5,"yes" = 0.5),
+                         "3" = c("no"= 0.7,"yes" = 0.3))
+tree_def$prob$X4 <- list("1" = c("no"= 0.5,"yes" = 0.5),
+                         "2" = c("no"= 0.4,"yes" = 0.6),
+                         "3" = c("no"= 0.3,"yes" = 0.7),
+                         "4" = c("no"= 0.7,"yes" = 0.3))
+tree_def$prob$X5 <- list("1" = c("no"= 0.5,"yes" = 0.5),
+                         "2" = c("no"= 0.4,"yes" = 0.6),
+                         "3" = c("no"= 0.3,"yes" = 0.7),
+                         "4" = c("no"= 0.7,"yes" = 0.3))
+tree_def$prob$X6 <- list("1" = c("no"= 0.2,"yes" = 0.8),
+                         "2" = c("no"= 0.7,"yes" = 0.3),
+                         "3" = c("no"= 0.3,"yes" = 0.7),
+                         "4" = c("no"= 0.5,"yes" = 0.5),
+                         "5" = c("no"= 0.6,"yes" = 0.4),
+                         "6" = c("no"= 0.4,"yes" = 0.6),
+                         "7" = c("no"= 0.8,"yes" = 0.2),
+                         "8" = c("no"= 0.9,"yes" = 0.1))
 
 ## Simulo i dati dall'albero
 data <- sample_from(tree_def, size = 2000, seed=2024)
