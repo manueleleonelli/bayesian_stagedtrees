@@ -70,7 +70,6 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
     v <- scope[iv]
     n_out_v[iv] <- length(tree$prob[[v]][[1]])
     alloc_v[[iv]] <- tree$stages[[v]]
-    # priors_v[[iv]] <- rep(1/2^(N_v[iv]-1)/n_out_v[iv],n_out_v[iv]) 
     priors_v[[iv]] <- rep(a/n_out_v[iv],n_out_v[iv]) 
   }
   K_v <- sapply(alloc_v, function(x){length(unique(x))})
@@ -293,6 +292,8 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           } else {
             tt_a <- tree$ctables[[v]][ixa, ]
           }
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_a <- sum(dist_H_iv[ixa,ixa])/2
           
           ## Computing counts for the second stage
           ixb <- tree$stages[[v]] == stage_2
@@ -303,7 +304,8 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           } else {
             tt_b <- tree$ctables[[v]][ixb, ]
           }
-          
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_b <- sum(dist_H_iv[ixb,ixb])/2
           
           ## Computing counts for the second stage
           ix_SM <- tree_new$stages[[v]] == merge_stage
@@ -314,7 +316,8 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           } else {
             tt_SM <- tree_new$ctables[[v]][ix_SM, ]
           }
-          
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_SM <- sum(dist_H_iv[ix_SM,ix_SM])/2
           
           ## Compute terms for marginal likelihood ratio
           r_1 <- -lgamma(sum(pr_a)) + lgamma(sum(tt_a+pr_a)) + sum(lgamma(pr_a)) - sum(lgamma(tt_a+pr_a)) 
@@ -324,6 +327,8 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           
           ## Compute Tree prior ratio (Dirichlet process)
           log_ar_SM <- log_ar_SM + log(kappa) + lgamma(nj_new[merge_stage]) - lgamma(nj_iv[as.numeric(stage_1)]) - lgamma(nj_iv[as.numeric(stage_2)])
+          #Add Hamming distance part
+          log_ar_SM <- log_ar_SM  - csi*(dist_SM - dist_a - dist_b)
           
           #if(prior == "Heckerman"){lp <- -log(beta[[v]])} else if(prior == "Friedman") {lp <- log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]])))} else if(prior == "Pensar"){lp <- -tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1)} else {lp <- 1}
           
@@ -366,6 +371,8 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           } else {
             tt_a <- tree_new$ctables[[v]][ixa, ]
           }
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_a <- sum(dist_H_iv[ixa,ixa])/2
           
           ## Computing counts for the second stage
           ixb <- tree_new$stages[[v]] == current_stage
@@ -376,6 +383,8 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           } else {
             tt_b <- tree_new$ctables[[v]][ixb, ]
           }
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_b <- sum(dist_H_iv[ixb,ixb])/2
           
           ## Computing counts for the second stage
           ix_SM <- (tree$stages[[v]] == current_stage)
@@ -386,7 +395,8 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           } else {
             tt_SM <- tree$ctables[[v]][ix_SM, ]
           }
-          
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_SM <- sum(dist_H_iv[ix_SM,ix_SM])/2
           
           ## Compute terms for marginal likelihood ratio
           r_1 <- -lgamma(sum(pr_a)) + lgamma(sum(tt_a+pr_a)) + sum(lgamma(pr_a)) - sum(lgamma(tt_a+pr_a)) 
@@ -396,6 +406,9 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           
           ## Compute Tree prior ratio (Dirichlet process)
           log_ar_SM <- log_ar_SM - log(kappa) + lgamma(nj_new[current_stage]) - lgamma(nj_iv[current_stage]) - lgamma(nj_iv[new_stage])
+          #Add Hamming distance part
+          log_ar_SM <- log_ar_SM  - csi*(- dist_SM + dist_a + dist_b)
+          
           
           #if(prior == "Heckerman"){lp <- -log(beta[[v]])} else if(prior == "Friedman") {lp <- log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]])))} else if(prior == "Pensar"){lp <- -tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1)} else {lp <- 1}
           
