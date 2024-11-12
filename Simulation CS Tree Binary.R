@@ -72,68 +72,78 @@ kappa <- 1
 csi <- 0.4
 
 source("mcmc_crp_distances.R")
+source("effect_sevt.R")
 
-# Define vectors of values for csi and kappa
 # Define vectors of values for csi, kappa, and sample sizes
 csi_values <- c(0, 1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 1)
 kappa_values <- c(0.01, 0.05, 0.1, 0.5, 1, 5)
-sample_sizes <- c(500, 1000, 2500, 5000,7500, 10000)
+sample_sizes <- c(500, 1000, 2500, 5000, 7500, 10000)
+num_reps <- 25
 
 # Initialize a list to store estimate_VI results
 estimate_VI_results <- list()
 
 # Loop over all sample sizes
 for (sample_size in sample_sizes) {
-  # Generate new data for each sample size
-  data <- sample_from(tree_def, size = sample_size)
-  tree <- stndnaming(stages_fbhc(full(data)))
   
-  # Check and regenerate data if necessary
-  while (any(tree$ctables$X6[,1] == 0 & tree$ctables$X6[,2] == 0)) {
-    data <- sample_from(tree_def, size = sample_size)
-    tree <- stndnaming(stages_fbhc(full(data)))
-  }
-  
-  # Loop over all combinations of csi and kappa for the current sample size
+  # Loop over all combinations of csi and kappa
   for (csi_val in csi_values) {
     for (kappa_val in kappa_values) {
       
-      estimate_VI_results[[paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)]] <- list()
+      # Initialize the storage for the current combination
+      key <- paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)
+      estimate_VI_results[[key]] <- list()
       
-      # Run MCMC for each combination of csi and kappa
-      ciao <- mcmc_crp_distances(tree, n_save = n_save, n_burn = n_burn, thin = thin, 
-                                 a = a, kappa = kappa_val, csi = csi_val, prior = prior, 
-                                 scope = scope, beta = beta, update_SM = update_SM, 
-                                 update_CRP = update_CRP)
-      
-      # Burn-in and thinning
-      result <- ciao$chain_out
-      
-      # Initialize the storage for current combination
-      estimate_VI <- result[[1]]
-      
-      # Store data object
-      estimate_VI_results[[paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)]][["data"]] <- data
-      
-      # Store salso results for each variable in scope
-      for (v in scope) {
-        # Create matrix for variable v
-        mat <- t(sapply(result, function(res) res$stages[[v]]))
+      # Loop for 25 repetitions
+      for (rep in 1:num_reps) {
+        # Generate new data for each repetition
+        data <- sample_from(tree_def, size = sample_size)
+        tree <- stndnaming(stages_fbhc(full(data)))
         
-        # Perform salso with VI loss for estimate_VI
-        estimate_VI$stages[[v]] <- salso(mat, loss = "VI")
+        # Ensure data is valid (no empty counts for X6)
+        while (any(tree$ctables$X6[, 1] == 0 & tree$ctables$X6[, 2] == 0)) {
+          data <- sample_from(tree_def, size = sample_size)
+          tree <- stndnaming(stages_fbhc(full(data)))
+        }
+        
+        # Run MCMC for the current combination of csi and kappa
+        ciao <- mcmc_crp_distances(tree, n_save = n_save, n_burn = n_burn, thin = thin, 
+                                   a = a, kappa = kappa_val, csi = csi_val, prior = prior, 
+                                   scope = scope, beta = beta, update_SM = update_SM, 
+                                   update_CRP = update_CRP)
+        
+        # Burn-in and thinning
+        result <- ciao$chain_out
+        
+        # Initialize the storage for current repetition
+        estimate_VI <- result[[1]]
+        estimate_Binder <- result[[1]]
+        
+        # Store salso results for each variable in scope
+        for (v in scope) {
+          # Create matrix for variable v
+          mat <- t(sapply(result, function(res) res$stages[[v]]))
+          
+          # Perform salso with VI and Binder loss
+          estimate_VI$stages[[v]] <- salso(mat, loss = "VI")
+          estimate_Binder$stages[[v]] <- salso(mat, loss = "binder")
+        }
+        
+        # Store the ce_randomized diff() output for each model
+        ce_diffs <- sapply(result, function(model) {
+          diff(ce_randomized(sevt_fit(model, data, lambda = a/2), outcome = "X6", treatment = "X5")[, 2])
+        })
+        
+        # Save results for current repetition
+        estimate_VI_results[[key]][[paste0("rep_", rep)]] <- list(
+          VI = estimate_VI,
+          Binder = estimate_Binder,
+          ce_diffs = ce_diffs
+        )
+        
+        # Clear data to save memory
+        rm(data)
       }
-      
-      # Store the ce_randomized diff() output for each model
-      ce_diffs <- sapply(result, function(model) {
-        diff(ce_randomized(sevt_fit(model, data, lambda = a/2), outcome = "X6", treatment = "X5")[, 2])
-      })
-      
-      # Add ce_diffs to the estimate_VI object
-      estimate_VI_results[[paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)]][["ce_diffs"]] <- ce_diffs
-      
-      # Store the result in the main list
-      estimate_VI_results[[paste0("sample_", sample_size, "_csi_", csi_val, "_kappa_", kappa_val)]][["tree"]] <- estimate_VI
     }
   }
 }
