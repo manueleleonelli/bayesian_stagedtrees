@@ -70,9 +70,7 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
     v <- scope[iv]
     n_out_v[iv] <- length(tree$prob[[v]][[1]])
     alloc_v[[iv]] <- tree$stages[[v]]
-    if(iv == 1){priors_v[[iv]] <- rep(a/n_out_v[iv],n_out_v[iv])} else{
-      priors_v[[iv]] <- rep(priors_v[[iv-1]][1]*a/n_out_v[iv],n_out_v[iv])
-    }
+    priors_v[[iv]] <- rep(a/n_out_v[iv],n_out_v[iv]) 
   }
   K_v <- sapply(alloc_v, function(x){length(unique(x))})
   nj_v <- lapply(alloc_v, table)
@@ -117,7 +115,8 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
         mat[i2,i1] <- mat[i1,i2]
       }
     }
-    dist_H[[iv]] <- mat
+    #Use normalised distance: divide by the number of variables (taking values in (0,1))
+    dist_H[[iv]] <- mat/(length(p_v1)-1)
   }
   
   
