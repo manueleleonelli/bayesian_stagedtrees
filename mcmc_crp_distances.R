@@ -280,7 +280,7 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           nj_new <- table(c_new)
           
           ## Fit new tree
-          tree_new <- sevt_fit(tree_new)
+          # tree_new <- sevt_fit(tree_new)
           # ## Compute edges prior for new tree
           # priors_new <- comp_prior(tree_new, a)
           
@@ -324,7 +324,7 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           r_1 <- -lgamma(sum(pr_a)) + lgamma(sum(tt_a+pr_a)) + sum(lgamma(pr_a)) - sum(lgamma(tt_a+pr_a)) 
           r_2 <-  - lgamma(sum(pr_b)) + lgamma(sum(tt_b+pr_b)) + sum(lgamma(pr_b)) - sum(lgamma(tt_b+pr_a))
           r_12 <- +lgamma(sum(pr_SM)) - lgamma(sum(tt_SM+pr_SM)) - sum(lgamma(pr_SM)) + sum(lgamma(tt_SM+pr_SM))
-          log_ar_SM <- log_ar_SM + r_12
+          log_ar_SM <- log_ar_SM + r_12 - r_1 - r_2 ## fixed 
           
           ## Compute Tree prior ratio (Dirichlet process)
           log_ar_SM <- log_ar_SM + log(kappa) + lgamma(nj_new[merge_stage]) - lgamma(nj_iv[as.numeric(stage_1)]) - lgamma(nj_iv[as.numeric(stage_2)])
@@ -356,7 +356,7 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           tree_new$stages[[v]][target_indices] <- assignments
           
           ## Fit new tree
-          tree_new <- sevt_fit(tree_new)
+          # tree_new <- sevt_fit(tree_new)
           # ## Compute edges prior for new tree
           # priors_new <- comp_prior(tree_new, a)
           c_new <- tree_new$stages[[v]]
@@ -403,7 +403,7 @@ mcmc_crp_distances <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa 
           r_1 <- -lgamma(sum(pr_a)) + lgamma(sum(tt_a+pr_a)) + sum(lgamma(pr_a)) - sum(lgamma(tt_a+pr_a)) 
           r_2 <-  - lgamma(sum(pr_b)) + lgamma(sum(tt_b+pr_b)) + sum(lgamma(pr_b)) - sum(lgamma(tt_b+pr_a))
           r_12 <- +lgamma(sum(pr_SM)) - lgamma(sum(pr_SM+tt_SM)) - sum(lgamma(pr_SM)) + sum(lgamma(tt_SM+pr_SM))
-          log_ar_SM <- log_ar_SM - r_12
+          log_ar_SM <- log_ar_SM - r_12 + r_1 + r_2 ## fixed
           
           ## Compute Tree prior ratio (Dirichlet process)
           log_ar_SM <- log_ar_SM - log(kappa) + lgamma(nj_new[current_stage]) - lgamma(nj_iv[current_stage]) - lgamma(nj_iv[new_stage])
