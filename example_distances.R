@@ -34,7 +34,7 @@ data <- lapply(data, function(x) {
 
 # Convert the list back to a data.frame and order variables
 data <- as.data.frame(data)
-data <- data[,c(3,4,5,1,2)]
+data <- data[,c(5,3,4,2,1)]
 
 
 ### Choose a starting tree for the MCMC and subset of data for uncertainty
@@ -71,7 +71,7 @@ source("mcmc_crp_distances.R")
 
 tree <- full(Titanic)
 scope <- "Survived"
-ciao <- mcmc_crp_distances(tree,n_save = n_save,n_burn = n_burn, thin = thin, a = 1, kappa = 1, csi = 0.1, prior = prior, scope = scope, beta=beta, update_SM=update_SM, update_CRP=update_CRP)
+ciao <- mcmc_crp_distances(tree,n_save = n_save,n_burn = n_burn, thin = thin, a = 1, kappa = 1, csi = 1/8, prior = prior, scope = scope, beta=beta, update_SM=update_SM, update_CRP=update_CRP)
 
 ## Burn-in and thinning
 result <- ciao$chain_out

@@ -123,12 +123,14 @@ for (sample_size in sample_sizes) {
 }
 
 library(ggplot2)
-library(reshape2)
 library(gridExtra)
 
-# Extract unique stage counts for each entry
-results <- data.frame(Sample_Size = integer(), Csi = numeric(), Kappa = numeric(), Unique_Stages = integer(), Hamming = integer(), Local = integer(),Parents = integer(), Rand= numeric())
+# Initialize a dataframe for storing the median results
+results <- data.frame(Sample_Size = integer(), Csi = numeric(), Kappa = numeric(),
+                      Median_Unique_Stages = numeric(), Median_Hamming = numeric(),
+                      Median_Locals = numeric(), Median_Parents = numeric(), Median_Rand = numeric())
 
+# Loop through each combination of parameters in the estimate_VI_results list
 for (key in names(estimate_VI_results)) {
   # Parse the sample, csi, and kappa values from the key
   parts <- unlist(strsplit(key, "_"))
@@ -136,36 +138,63 @@ for (key in names(estimate_VI_results)) {
   csi <- as.numeric(parts[4])
   kappa <- as.numeric(parts[6])
   
-  # Calculate the number of unique stages for X6
-  unique_stages <- length(unique(estimate_VI_results[[key]]$stages$X5))
-  hamming <- sum(hamming_stages(tree_def,estimate_VI_results[[key]],return_tree = T)$X5)
-  locals <- length(as_parentslist(estimate_VI_results[[key]])$X5$local)
-  parents <- length(as_parentslist(estimate_VI_results[[key]])$X5$parents)
-  rand <- rand.index(as.numeric(tree_def$stages$X5),as.numeric(estimate_VI_results[[key]]$stages$X5))
-  # Add the result to the dataframe
-  results <- rbind(results, c( sample_size, csi, kappa, unique_stages,hamming,locals,parents,rand))
+  # Initialize storage for metrics across the 5 replications
+  unique_stages_list <- c()
+  hamming_list <- c()
+  locals_list <- c()
+  parents_list <- c()
+  rand_list <- c()
+  
+  # Loop through each replication (rep_1 to rep_5)
+  for (rep_key in names(estimate_VI_results[[key]])) {
+    rep_result <- estimate_VI_results[[key]][[rep_key]]$VI  # Get the VI object
+    
+    # Compute metrics for this replication
+    unique_stages_list <- c(unique_stages_list, length(unique(rep_result$stages$X6)))
+    hamming_list <- c(hamming_list, sum(hamming_stages(tree_def, rep_result, return_tree = TRUE)$X6))
+    locals_list <- c(locals_list, length(as_parentslist(rep_result)$X6$local))
+    parents_list <- c(parents_list, length(as_parentslist(rep_result)$X6$parents))
+    rand_list <- c(rand_list, rand.index(as.numeric(tree_def$stages$X6), as.numeric(rep_result$stages$X6)))
+  }
+  
+  # Compute median values across the 5 replications
+  median_unique_stages <- median(unique_stages_list) - length(unique(tree_def$stages$X6))  # Adjusted baseline
+  median_hamming <- median(hamming_list)
+  median_locals <- median(locals_list)
+  median_parents <- median(parents_list)
+  median_rand <- median(rand_list)
+  
+  # Append results for this parameter combination
+  results <- rbind(results, data.frame(
+    Sample_Size = sample_size,
+    Csi = csi,
+    Kappa = kappa,
+    Median_Unique_Stages = median_unique_stages,
+    Median_Hamming = median_hamming,
+    Median_Locals = median_locals,
+    Median_Parents = median_parents,
+    Median_Rand = median_rand
+  ))
 }
 
-results <- as.data.frame(results)
-colnames(results) <- c("Sample_Size", "Csi","Kappa","Unique_Stages","Hamming","Locals","Parents","Rand")
-results$Unique_Stages <- results$Unique_Stages - 9
-
+# Visualize results using heatmaps
 heatmap_list <- list()
-for (sample_size in sample_sizes) {
+for (sample_size in unique(results$Sample_Size)) {
   # Subset data for the current sample size
   data_subset <- subset(results, Sample_Size == sample_size)
   
-  # Create heatmap
-  p <- ggplot(data_subset, aes(x = as.factor(Kappa), y = as.factor(Csi), fill = Hamming)) +
+  # Create heatmap for median Rand index
+  p <- ggplot(data_subset, aes(x = as.factor(Kappa), y = as.factor(Csi), fill = Median_Rand)) +
     geom_tile() +
     scale_fill_gradient2(name = "Rand", low = "red", mid = "white", high = "blue", midpoint = 0) +
     labs(title = paste("Sample Size:", sample_size), x = "Kappa", y = "Csi") +
     theme_minimal()
   
-  # Append to list
+  # Append the heatmap to the list
   heatmap_list[[as.character(sample_size)]] <- p
 }
 
 # Arrange heatmaps in a grid
 do.call("grid.arrange", c(heatmap_list, ncol = 2))
+
 

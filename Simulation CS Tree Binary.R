@@ -78,7 +78,7 @@ source("effect_sevt.R")
 csi_values <- c(0, 1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 1)
 kappa_values <- c(0.01, 0.05, 0.1, 0.5, 1, 5)
 sample_sizes <- c(500, 1000, 2500, 5000, 7500, 10000)
-num_reps <- 25
+num_reps <- 5
 
 # Initialize a list to store estimate_VI results
 estimate_VI_results <- list()
@@ -148,13 +148,14 @@ for (sample_size in sample_sizes) {
   }
 }
 
-
 library(ggplot2)
 library(reshape2)
 library(gridExtra)
 
-# Extract unique stage counts for each entry
-results <- data.frame(Sample_Size = integer(), Csi = numeric(), Kappa = numeric(), Unique_Stages = integer(), Hamming = integer(), Local = integer(),Parents = integer(), Rand= numeric())
+# Initialize a dataframe for storing median results
+results <- data.frame(Sample_Size = integer(), Csi = numeric(), Kappa = numeric(), 
+                      Median_Unique_Stages = numeric(), Median_Hamming = numeric(), 
+                      Median_Locals = numeric(), Median_Parents = numeric(), Median_Rand = numeric())
 
 for (key in names(estimate_VI_results)) {
   # Parse the sample, csi, and kappa values from the key
@@ -163,29 +164,55 @@ for (key in names(estimate_VI_results)) {
   csi <- as.numeric(parts[4])
   kappa <- as.numeric(parts[6])
   
-  # Calculate the number of unique stages for X6
-  unique_stages <- length(unique(estimate_VI_results[[key]]$tree$stages$X6))
-  hamming <- sum(hamming_stages(tree_def,estimate_VI_results[[key]]$tree,return_tree = T)$X6)
-  locals <- length(as_parentslist(estimate_VI_results[[key]]$tree)$X6$local)
-  parents <- length(as_parentslist(estimate_VI_results[[key]]$tree)$X6$parents)
-  rand <- rand.index(as.numeric(tree_def$stages$X6),as.numeric(estimate_VI_results[[key]]$tree$stages$X6))
-  # Add the result to the dataframe
-  results <- rbind(results, c( sample_size, csi, kappa, unique_stages,hamming,locals,parents,rand))
+  # Collect metrics across replications
+  unique_stages_list <- c()
+  hamming_list <- c()
+  locals_list <- c()
+  parents_list <- c()
+  rand_list <- c()
+  
+  for (rep_key in names(estimate_VI_results[[key]])) {
+    # Retrieve tree and data for this replication
+    rep_result <- estimate_VI_results[[key]][[rep_key]]
+    
+    unique_stages_list <- c(unique_stages_list, length(unique(rep_result$VI$stages$X6)))
+    hamming_list <- c(hamming_list, sum(hamming_stages(tree_def, rep_result$VI, return_tree = TRUE)$X6))
+    locals_list <- c(locals_list, length(as_parentslist(rep_result$VI)$X6$local))
+    parents_list <- c(parents_list, length(as_parentslist(rep_result$VI)$X6$parents))
+    rand_list <- c(rand_list, rand.index(as.numeric(tree_def$stages$X6), as.numeric(rep_result$VI$stages$X6)))
+  }
+  
+  # Compute median values for this combination of sample size, csi, and kappa
+  median_unique_stages <- median(unique_stages_list)- length(unique(tree_def$stages$X6))
+  median_hamming <- median(hamming_list)
+  median_locals <- median(locals_list)
+  median_parents <- median(parents_list)
+  median_rand <- median(rand_list)
+  
+  # Append to the results dataframe
+  results <- rbind(results, data.frame(
+    Sample_Size = sample_size, 
+    Csi = csi, 
+    Kappa = kappa, 
+    Median_Unique_Stages = median_unique_stages, 
+    Median_Hamming = median_hamming, 
+    Median_Locals = median_locals, 
+    Median_Parents = median_parents, 
+    Median_Rand = median_rand
+  ))
 }
 
-results <- as.data.frame(results)
-colnames(results) <- c("Sample_Size", "Csi","Kappa","Unique_Stages","Hamming","Locals","Parents","Rand")
-results$Unique_Stages <- results$Unique_Stages - length(unique(tree_def$stages$X6))
-
+# Visualize using heatmaps
 heatmap_list <- list()
-for (sample_size in sample_sizes) {
+for (sample_size in unique(results$Sample_Size)) {
   # Subset data for the current sample size
   data_subset <- subset(results, Sample_Size == sample_size)
   
   # Create heatmap
-  p <- ggplot(data_subset, aes(x = as.factor(Kappa), y = as.factor(Csi), fill = Unique_Stages)) +
+  p <- ggplot(data_subset, aes(x = as.factor(Kappa), y = as.factor(Csi), fill = Median_Unique_Stages)) +
     geom_tile() +
-    scale_fill_gradient2(name = "Rand", low = "red", mid = "white", high = "blue", midpoint = 0) +
+    scale_fill_gradient2(name = "Number of Stages", low = "red", mid = "white", high = "blue", midpoint = 0) +
+ # scale_fill_viridis(name = "Number of Stages", option = "D")+
     labs(title = paste("Sample Size:", sample_size), x = "Kappa", y = "Csi") +
     theme_minimal()
   
@@ -196,3 +223,38 @@ for (sample_size in sample_sizes) {
 # Arrange heatmaps in a grid
 do.call("grid.arrange", c(heatmap_list, ncol = 2))
 
+
+## HISTOGRAMS CAUSAL EFFECTS
+
+csi_target <- 0.25
+kappa_target <- 1
+vertical_line <- diff(ce_randomized(tree_def, outcome = "X6", treatment = "X5")[, 2])
+
+# Initialize a list to store histograms
+histograms <- list()
+
+# Loop over all sample sizes to generate histograms
+for (sample_size in sample_sizes) {
+  # Access the specific ce_diffs
+  key <- paste0("sample_", sample_size, "_csi_", csi_target, "_kappa_", kappa_target)
+  if (!is.null(estimate_VI_results[[key]]$rep_1$ce_diffs)) {
+    ce_diffs <- estimate_VI_results[[key]]$rep_1$ce_diffs
+    
+    # Create a histogram using ggplot2
+    p <- ggplot(data = data.frame(ce_diffs = ce_diffs), aes(x = ce_diffs)) +
+      geom_histogram(bins = 20, color = "black", fill = "blue", alpha = 0.7) +
+      geom_vline(xintercept = vertical_line, color = "red", linetype = "dashed", size = 1) +
+      labs(
+        title = paste("Sample Size:", sample_size),
+        x = "Causal Effect",
+        y = "Frequency"
+      ) +
+      theme_minimal()
+    
+    # Add the plot to the list
+    histograms[[as.character(sample_size)]] <- p
+  }
+}
+
+# Arrange the histograms in a grid
+do.call("grid.arrange", c(histograms, ncol = 2))
