@@ -3,11 +3,6 @@ library("e1071")
 library(salso)
 library(fossil)
 
-source("Gamma_Only_With_Hamming.R")
-source("sample_partition_function.R")
-source("Gamma_Only_No_Hamming.R")
-source("Only_Hamming.R")
-
 ## Definisco l'albero
 tree_def <- list(X1 = c("no","yes"),
                  X2 = c("no","yes"),
@@ -40,19 +35,17 @@ tree_def$prob$X4 <- list("1" = c("no" = 0.7, "yes" = 0.3),
 
 sample_size <- 1000
 scope <- c("X3","X4")
-a <- c(1,1)
+a <- 1
 n_burn <- 1000
 thin <- 5
 n_save <- 5000
-csi <- c(0.25,0.25)
-kappa <- c(1,1)
+csi <- 0.25
+kappa <- 1
+mu0 <- 0
+kappa0 <- 1
+alpha0 <- 1
+beta0 <- 1
 
-bb <- list(c(1,1))
-cc <- list(c(1,1))
-ff <- list(c(0.2^2/0.2,0.2^2/0.2))
-gg <- list(c(0.2/0.2,0.2/0.2))
-
-update_CONT <-  T
 update_CRP <- T
 update_SM <- T
 
@@ -65,16 +58,14 @@ while (any(tree$ctables$X4[, 1] == 0 & tree$ctables$X4[, 2] == 0)) {
   tree <- stndnaming(stages_fbhc(full(data)))
 }
 
+  
 data$Z1 <- scale(rnorm(sample_size,40, sd= 10))
 data$Z2 <- 0
 data$Z2[which(data$X2=="no")] <- rnorm(length(which(data$X2=="no")),20,sd =3)
 data$Z2[which(data$X1=="yes" & data$X2 == "yes")] <- rnorm(length(which(data$X1=="yes" & data$X2 == "yes")),60,sd =3)
-data$Z2[which(data$X1=="no" & data$X2 == "no")] <- rnorm(length(which(data$X1=="no" & data$X2 == "no")),100,sd =3)
+data$Z2[which(data$X1=="no" & data$X2 == "yes")] <- rnorm(length(which(data$X1=="no" & data$X2 == "yes")),100,sd =3)
 data$Z2 <- scale(data$Z2)
 
 
-HO <- mcmc_crp_distances(tree,n_save =n_save,n_burn= n_burn,thin =thin,scope=scope)
-GNH <- mcmc_crp_gamma_no_hamming(tree, data, n_save, n_burn = n_burn, thin = thin, scope=scope)
-GH <- mcmc_crp_gamma_hamming(tree, data, n_save, n_burn = n_burn, thin = thin, scope=scope)
-
+mcmc_crp_ppmx(tree, data, n_save, n_burn = n_burn, thin = thin, a = a, kappa = kappa, csi = csi, scope = scope, update_SM = TRUE, update_CRP= TRUE)
 
