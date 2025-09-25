@@ -2,6 +2,10 @@ library(stagedtrees)
 library("e1071")
 library(salso)
 library(fossil)
+source("effect_sevt.R")
+source("ppmx_hamming.R")
+source("ppmx_hamming_Z.R")
+source("bayesian_cluster_summary.R")
 
 ## Definisco l'albero
 tree_def <- list(X1 = c("no","yes"),
@@ -71,8 +75,6 @@ prior <- "Heckerman"
 kappa <- 1
 csi <- 0.4
 
-source("mcmc_crp_distances.R")
-source("effect_sevt.R")
 
 # Define vectors of values for csi, kappa, and sample sizes
 csi_values <- c(0, 1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 1)
@@ -107,9 +109,9 @@ for (sample_size in sample_sizes) {
         }
         
         # Run MCMC for the current combination of csi and kappa
-        ciao <- mcmc_crp_distances(tree, n_save = n_save, n_burn = n_burn, thin = thin, 
-                                   a = a, kappa = kappa_val, csi = csi_val, prior = prior, 
-                                   scope = scope, beta = beta, update_SM = update_SM, 
+        ciao <- mcmc_crp_ppmx_Hamming(tree, n_save = n_save, n_burn = n_burn, thin = thin, 
+                                   a = a, kappa = kappa_val, csi = csi_val, 
+                                   scope = scope,  update_SM = update_SM, 
                                    update_CRP = update_CRP)
         
         # Burn-in and thinning

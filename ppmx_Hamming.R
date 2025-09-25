@@ -1,56 +1,7 @@
-### CRP Function
-# alpha: concentration parameter
-# assignments: current assignment of vertices to stages
-# vertex: the index of the vertex to be reassigned
-# crp_assignment <- function(assignments, alpha) {
-#   unique_stages <- unique(assignments)
-#   n_stages <- length(unique_stages)
-#   counts <- table(assignments)
-#   
-#   # CRP probabilities for existing stages
-#   crp_probs <- counts / (sum(counts) + alpha)
-#   
-#   # Probability of creating a new stage
-#   new_stage_prob <- alpha / (sum(counts) + alpha)
-#   
-#   # Combine probabilities
-#   probs <- c(crp_probs, new_stage_prob)
-#   
-#   # Sample a new stage assignment
-#   new_stage_idx <- sample(1:(n_stages + 1), 1, prob = probs)
-#   
-#   if (new_stage_idx == n_stages + 1) {
-#     # Create a new stage
-#     new_stage <- paste0("stage_", n_stages + 1)
-#   } else {
-#     # Assign to an existing stage
-#     new_stage <- unique_stages[new_stage_idx]
-#   }
-#   
-#   return(new_stage)
-# }
 
-### Function to compute the prior probability of edge probabilities using imaginary sample size
-comp_prior <- function(tree, a = 1){
-  priors <- tree$stages
-  nlev_full <- unlist(lapply(tree$tree, length)) # Number of levels of each variable
-  K <-  prod(nlev_full) # Number of root to leaf paths
-  paths <- rev(cumprod(rev(nlev_full)))[-1] # Number of root to leaf paths for nodes at different levels
-  nlev <- nlev_full[-1] # We drop the first variable since we never use it
-  depth <- length(nlev) # Number of layers where we perform model search
-  for(i in 1:length(tree$stages)) priors[[i]] <- (a/K)*(paths[i])*sapply(tree$stages[[i]], function(j) sum(tree$stages[[i]] == j))
-  priors_filtered_repeated_divided <- mapply(function(prior, n) {
-    unique_names <- unique(names(prior))
-    filtered_prior <- prior[unique_names]
-    repeated_divided <- rep(filtered_prior / n, each = n)
-    return(repeated_divided)
-  }, priors, nlev, SIMPLIFY = FALSE)
-  
-  return(priors_filtered_repeated_divided)
-}
-
-### MCMC Algorithm with CRP
-mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior = "Friedman", scope = NULL, beta = NULL, tau = NULL, update_SM = TRUE, update_CRP= TRUE){
+### MCMC Algorithm with CRP and PPMx (standard, NOT variable selection)
+mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, csi = 0.25,
+                                  scope = NULL, update_SM = TRUE, update_CRP = TRUE){
   
   n_tot <- n_burn + thin * n_save
   
@@ -69,11 +20,55 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
     v <- scope[iv]
     n_out_v[iv] <- length(tree$prob[[v]][[1]])
     alloc_v[[iv]] <- tree$stages[[v]]
-    # priors_v[[iv]] <- rep(1/2^(N_v[iv]-1)/n_out_v[iv],n_out_v[iv]) 
-    priors_v[[iv]] <- rep(1/2,n_out_v[iv]) 
+    priors_v[[iv]] <- rep(a/n_out_v[iv],n_out_v[iv]) 
   }
   K_v <- sapply(alloc_v, function(x){length(unique(x))})
   nj_v <- lapply(alloc_v, table)
+  
+  #Compute Hamming distances between stages paths
+  #these are fixed because the tree is fixed
+  n_vars <- length(tree$tree)
+  n_cat <- apply(matrix(1:n_vars,ncol = 1), 1, function(i){length(tree$prob[[i]][[1]])})
+  n_paths <- prod(n_cat[-n_vars])
+  tree_paths <- matrix(0, n_paths, n_vars)
+  for(iv in 1:(n_vars-1)){
+    n_cat_iv <- n_cat[iv]
+    if(iv < n_vars - 1){
+      exp_prod <- prod(n_cat[(iv+1):(n_vars-1)])
+    }else{
+      exp_prod <- 1
+    }
+    rep_cat <- c(apply(matrix(1:n_cat_iv, ncol = 1), 1, function(i){rep(i,exp_prod)}))
+    
+    #Use recycling
+    tree_paths[,iv+1] <- rep_cat
+  }
+  
+  #Now remove duplicates
+  tree_paths_list <- vector("list",length = n_vars)
+  for(iv in 1:n_vars){
+    tree_paths_list[[iv]] <- unique(tree_paths[,1:iv])
+  }
+  
+  
+  dist_H <- vector("list", length = n_v)
+  for(iv in 1:n_v){
+    iv_pos <- match(scope[iv], names(tree$tree))
+    N_v_iv <- N_v[iv]
+    mat <- matrix(0, N_v_iv, N_v_iv)
+    for(i1 in 1:(N_v_iv-1)){
+      for(i2 in (i1+1):N_v_iv){
+        p_v1 <- tree_paths_list[[iv_pos]][i1,]
+        p_v2 <- tree_paths_list[[iv_pos]][i2,]
+        mat[i1,i2] <- hamming.distance(p_v1, p_v2)
+        mat[i2,i1] <- mat[i1,i2]
+      }
+    }
+    #Use normalised distance: divide by the number of variables (taking values in (0,1))
+    dist_H[[iv]] <- mat/(length(p_v1)-1)
+  }
+  
+  
   
   SM_accept <- 0
   SM_count <- 0
@@ -89,11 +84,6 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
   ## Cycle over iteration
   for(it in 1:n_tot){
     
-    # ## Compute prior for current tree
-    # priors <- comp_prior(tree, a)
-    
-    
-    
     ## Cycle over variables that are estimated
     for(iv in 1:n_v){
       v <- scope[iv]
@@ -105,6 +95,8 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
       K_iv <- K_v[iv]
       
       priors_iv <- priors_v[[iv]]
+      
+      dist_H_iv <- dist_H[[iv]]
       
       if(update_CRP){
         for(i in 1:N_iv){
@@ -124,11 +116,7 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
           tree_new <- tree
           tree_new$stages[[v]][i] <- K_iv+1
           
-          # ## Counts for new stage
-          # priors_new <- comp_prior(tree_new, a)
-          
           ix <- (tree_new$stages[[v]] == (K_iv+1))
-          # pr_new <- unlist(priors_new[[v]][names(priors_new[[v]]) == (K_iv+1)])
           pr_new <- priors_iv
           tt_new <- tree_new$ctables[[v]][ix, ]
           
@@ -141,11 +129,7 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
             tree_k <- tree
             tree_k$stages[[v]][i] <- k
             
-            # ## Counts for k-th stage
-            # priors_k <- comp_prior(tree_k, a)
-            
             ix <- (tree_k$stages[[v]] == k)
-            # pr_k <- unlist(priors_k[[v]][names(priors_k[[v]]) == k])
             pr_k <- priors_iv
             if (sum(ix) > 1) {
               tt_k <- apply(tree_k$ctables[[v]][ix, ], MARGIN = 2, sum)
@@ -159,6 +143,13 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
             f_k[k + 1] <- lgamma(sum(pr_k + tt_k_minus_i)) - sum(lgamma(pr_k + tt_k_minus_i)) + sum(lgamma(tt_k + pr_k)) - lgamma(sum(tt_k + pr_k))
           }
           
+          dist_H_j <- rep(0,K_iv)
+          for(k in 1:K_iv){
+            ind_k <- setdiff(which(c_ij == k),i)
+            dist_H_j[k] <- sum(dist_H_iv[i,ind_k])
+          }
+          
+          #Dirichlet weights
           w <- c(kappa, nj_iv)
           
           #The nj term could be < 0!
@@ -166,10 +157,12 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
             w[aux_i + 1] = 0
           }
           
-          f_k = exp(f_k-max(f_k)) * w
-          f_k = f_k/sum(f_k)
+          fg_k <- f_k + c(0,- csi * dist_H_j)
           
-          hh <- sample.int(K_iv + 1, 1, prob = f_k)
+          fg_k = exp(fg_k-max(fg_k)) * w
+          fg_k = fg_k/sum(fg_k)
+          
+          hh <- sample.int(K_iv + 1, 1, prob = fg_k)
           
           if(hh == 1){
             if(alone_i){
@@ -225,11 +218,6 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
           tree_new$stages[[v]] <- as.character(c_new)
           nj_new <- table(c_new)
           
-          ## Fit new tree
-          tree_new <- sevt_fit(tree_new)
-          # ## Compute edges prior for new tree
-          # priors_new <- comp_prior(tree_new, a)
-          
           ## Computing counts for the first stage
           ixa <- tree$stages[[v]] == stage_1
           # pr_a <- priors[[v]][names(priors[[v]]) == stage_1]
@@ -239,6 +227,10 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
           } else {
             tt_a <- tree$ctables[[v]][ixa, ]
           }
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_a <- sum(dist_H_iv[ixa,ixa])/2
+          
+          
           
           ## Computing counts for the second stage
           ixb <- tree$stages[[v]] == stage_2
@@ -249,29 +241,34 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
           } else {
             tt_b <- tree$ctables[[v]][ixb, ]
           }
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_b <- sum(dist_H_iv[ixb,ixb])/2
+          
           
           
           ## Computing counts for the second stage
           ix_SM <- tree_new$stages[[v]] == merge_stage
-          # pr_SM <- priors_new[[v]][names(priors_new[[v]]) == merge_stage]
           pr_SM <- priors_iv
           if (sum(ix_SM) > 1) {
             tt_SM <- apply(tree_new$ctables[[v]][ix_SM, ], MARGIN = 2, sum)
           } else {
             tt_SM <- tree_new$ctables[[v]][ix_SM, ]
           }
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_SM <- sum(dist_H_iv[ix_SM,ix_SM])/2
+          
           
           
           ## Compute terms for marginal likelihood ratio
           r_1 <- -lgamma(sum(pr_a)) + lgamma(sum(tt_a+pr_a)) + sum(lgamma(pr_a)) - sum(lgamma(tt_a+pr_a)) 
           r_2 <-  - lgamma(sum(pr_b)) + lgamma(sum(tt_b+pr_b)) + sum(lgamma(pr_b)) - sum(lgamma(tt_b+pr_a))
           r_12 <- +lgamma(sum(pr_SM)) - lgamma(sum(tt_SM+pr_SM)) - sum(lgamma(pr_SM)) + sum(lgamma(tt_SM+pr_SM))
-          log_ar_SM <- log_ar_SM + r_12
+          log_ar_SM <- log_ar_SM + r_12 - r_1 - r_2 ## fixed 
           
           ## Compute Tree prior ratio (Dirichlet process)
           log_ar_SM <- log_ar_SM + log(kappa) + lgamma(nj_new[merge_stage]) - lgamma(nj_iv[as.numeric(stage_1)]) - lgamma(nj_iv[as.numeric(stage_2)])
-          
-          #if(prior == "Heckerman"){lp <- -log(beta[[v]])} else if(prior == "Friedman") {lp <- log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]])))} else if(prior == "Pensar"){lp <- -tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1)} else {lp <- 1}
+          #Add Hamming distance part
+          log_ar_SM <- log_ar_SM  - csi*(dist_SM - dist_a - dist_b)
           
           ## Compute transition probability ratio
           log_ar_SM <- log_ar_SM + (nj_new[merge_stage]-2) * log(0.5)
@@ -295,55 +292,58 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
           #Split
           tree_new$stages[[v]][target_indices] <- assignments
           
-          ## Fit new tree
-          tree_new <- sevt_fit(tree_new)
-          # ## Compute edges prior for new tree
-          # priors_new <- comp_prior(tree_new, a)
           c_new <- tree_new$stages[[v]]
           nj_new <- table(c_new)
           
           
           ## Computing counts for the first stage
           ixa <- tree_new$stages[[v]] == new_stage
-          # pr_a <- priors_new[[v]][names(priors_new[[v]]) == new_stage]
           pr_a <- priors_iv
           if (sum(ixa) > 1) {
             tt_a <- apply(tree_new$ctables[[v]][ixa, ], MARGIN = 2, sum) 
           } else {
             tt_a <- tree_new$ctables[[v]][ixa, ]
           }
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_a <- sum(dist_H_iv[ixa,ixa])/2
+          
           
           ## Computing counts for the second stage
           ixb <- tree_new$stages[[v]] == current_stage
-          # pr_b <- priors_new[[v]][names(priors_new[[v]]) == current_stage]
           pr_b <- priors_iv
           if (sum(ixb) > 1) {
             tt_b <- apply(tree_new$ctables[[v]][ixb, ], MARGIN = 2, sum)
           } else {
             tt_b <- tree_new$ctables[[v]][ixb, ]
           }
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_b <- sum(dist_H_iv[ixb,ixb])/2
           
+
+                    
           ## Computing counts for the second stage
           ix_SM <- (tree$stages[[v]] == current_stage)
-          # pr_SM <- priors[[v]][names(priors[[v]]) == current_stage]
           pr_SM <- priors_iv
           if (sum(ix_SM) > 1) {
             tt_SM <- apply(tree$ctables[[v]][ix_SM, ], MARGIN = 2, sum)
           } else {
             tt_SM <- tree$ctables[[v]][ix_SM, ]
           }
+          #Sum of pairwise Hamming distances between elements of cluster
+          dist_SM <- sum(dist_H_iv[ix_SM,ix_SM])/2
+          
           
           
           ## Compute terms for marginal likelihood ratio
           r_1 <- -lgamma(sum(pr_a)) + lgamma(sum(tt_a+pr_a)) + sum(lgamma(pr_a)) - sum(lgamma(tt_a+pr_a)) 
           r_2 <-  - lgamma(sum(pr_b)) + lgamma(sum(tt_b+pr_b)) + sum(lgamma(pr_b)) - sum(lgamma(tt_b+pr_a))
           r_12 <- +lgamma(sum(pr_SM)) - lgamma(sum(pr_SM+tt_SM)) - sum(lgamma(pr_SM)) + sum(lgamma(tt_SM+pr_SM))
-          log_ar_SM <- log_ar_SM - r_12
+          log_ar_SM <- log_ar_SM - r_12 + r_1 + r_2 ## fixed
           
           ## Compute Tree prior ratio (Dirichlet process)
           log_ar_SM <- log_ar_SM - log(kappa) + lgamma(nj_new[current_stage]) - lgamma(nj_iv[current_stage]) - lgamma(nj_iv[new_stage])
-          
-          #if(prior == "Heckerman"){lp <- -log(beta[[v]])} else if(prior == "Friedman") {lp <- log(length(tree$stages[[v]]) - length(unique(tree$stages[[v]]))) -log(length(unique(tree$stages[[v]])))} else if(prior == "Pensar"){lp <- -tau*log(nrow(tree$data_raw))*(1+tau)^(length(unique(tree$stages[[v]]))-1)} else {lp <- 1}
+          #Add Hamming distance part
+          log_ar_SM <- log_ar_SM  - csi*(- dist_SM + dist_a + dist_b)
           
           ## Compute transition probability ratio
           log_ar_SM <- log_ar_SM - (nj_iv[current_stage]-2) * log(0.5)
@@ -374,7 +374,12 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
       alloc_v[[iv]] <- c_ij
       nj_v[[iv]] <- nj_iv
       K_v[iv] <- K_iv
+      
+      
+      
+      
     }
+    
     
     if(it%%10 == 0){
       print(K_v)  
@@ -401,14 +406,7 @@ mcmc_crp <- function(tree, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, prior
     print(Split_count / n_tot / n_v)
   }
   
+  
   OUTPUT_MCMC <- list("alloc_v_out" = alloc_v_out, "nj_v_out" = nj_v_out, "K_v_out" = K_v_out, "chain_out" = chain_out)
   return(OUTPUT_MCMC)
 }
-
-# ### Example Usage
-# # Assuming you have a tree object named 'my_tree' and the appropriate setup.
-# set.seed(123)  # For reproducibility
-# result_chain <- mcmc_crp(tree = tree, it = 50000, a = 0.1, alpha = 100000, scope = scope)
-# 
-# # Print the first result of the MCMC chain
-# print(result_chain[[1]])
