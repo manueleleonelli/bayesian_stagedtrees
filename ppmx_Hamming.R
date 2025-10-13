@@ -8,7 +8,7 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
   # Check the inputs (use check_mcmc function as before, omitted here for brevity)
   # priors <- comp_prior(stndnaming(tree), a)
   if(is.null(scope)){scope <- sevt_varnames(tree)[-1]}
-  pb <- txtProgressBar(min = 0, max = n_tot, style = 3)
+  #pb <- txtProgressBar(min = 0, max = n_tot, style = 3)
   
   #Objects for CRP update
   n_v <- length(scope)
@@ -381,9 +381,9 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
     }
     
     
-    if(it%%10 == 0){
-      print(K_v)  
-    }
+    #if(it%%10 == 0){
+    #  print(K_v)  
+   # }
     
     if((it > n_burn) & ((it - n_burn)%%thin == 0)){
       iter <- (it - n_burn)%/%thin
@@ -394,17 +394,17 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
       chain_out[[iter]] <- stndnaming(sevt_fit(tree)) 
     }
     
-    setTxtProgressBar(pb, it)
+    #setTxtProgressBar(pb, it)
   }
   
-  close(pb)
+  #close(pb)
   
-  if(update_SM){
-    print("merge ar")
-    print(Merge_count / n_tot / n_v)
-    print("split ar")
-    print(Split_count / n_tot / n_v)
-  }
+ # if(update_SM){
+   # print("merge ar")
+  #print(Merge_count / n_tot / n_v)
+   # print("split ar")
+  #  print(Split_count / n_tot / n_v)
+ # }
   
   
   OUTPUT_MCMC <- list("alloc_v_out" = alloc_v_out, "nj_v_out" = nj_v_out, "K_v_out" = K_v_out, "chain_out" = chain_out)

@@ -223,7 +223,7 @@ for (sample_size in unique(results$Sample_Size)) {
 }
 
 # Arrange heatmaps in a grid
-do.call("grid.arrange", c(heatmap_list, ncol = 2))
+do.call("grid.arrange", c(heatmap_list, ncol = 3))
 
 
 ## HISTOGRAMS CAUSAL EFFECTS
