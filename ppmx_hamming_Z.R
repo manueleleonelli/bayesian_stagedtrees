@@ -1,14 +1,21 @@
+library("e1071")
+
+predloglik <- function(alpha0,beta0,kappa0, mean, var, size){
+  sum(alpha0*log(beta0) + 0.5*log(kappa0) - lgamma(alpha0) - 0.5*size*log(2*pi) + lgamma(alpha0 + size/2) - 0.5*log(kappa0+size) - (alpha0 + size/2)*log(beta0+0.5*var+ (kappa0*size*(mean-mu0)^2)/(2*(kappa0+size))))
+}
 
 ### MCMC Algorithm with CRP and PPMx (standard, NOT variable selection)
-mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 1, kappa = 1, csi = 0.25,
-                                  scope = NULL, update_SM = TRUE, update_CRP = TRUE){
+mcmc_crp_ppmx_Hamming_Z <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 1, 
+                                    kappa = 1, csi = 0.25, lambda_Z,
+                                    scope = NULL, update_SM = TRUE, update_CRP = TRUE, 
+                                    mu0 = 0, kappa0 = 1, alpha0 = 1, beta0 = 1){
   
   n_tot <- n_burn + thin * n_save
   
   # Check the inputs (use check_mcmc function as before, omitted here for brevity)
   # priors <- comp_prior(stndnaming(tree), a)
   if(is.null(scope)){scope <- sevt_varnames(tree)[-1]}
-  #pb <- txtProgressBar(min = 0, max = n_tot, style = 3)
+  pb <- txtProgressBar(min = 0, max = n_tot, style = 3)
   
   #Objects for CRP update
   n_v <- length(scope)
@@ -60,7 +67,7 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
       for(i2 in (i1+1):N_v_iv){
         p_v1 <- tree_paths_list[[iv_pos]][i1,]
         p_v2 <- tree_paths_list[[iv_pos]][i2,]
-        mat[i1,i2] <- hamming.distance(p_v1, p_v2)
+        mat[i1,i2] <- e1071::hamming.distance(p_v1, p_v2)
         mat[i2,i1] <- mat[i1,i2]
       }
     }
@@ -69,6 +76,83 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
   }
   
   
+  
+  #Summary statistics of numerical continuous variables
+  nums <- sapply(data, function(col) is.numeric(col) | is.integer(col))
+  q_Z <- sum(nums)
+  
+  # Initialize result objects as nested lists
+  means <- list()
+  vars <- list()
+  sizes <- list()
+  
+  # Iterate through each target variable in the scope
+  for (target_var in scope) {
+    # Find the variables preceding the current target variable
+    vars_order <- names(tree$tree)
+    preceding_vars <- vars_order[1:(which(vars_order == target_var) - 1)]
+    
+    # Get all possible combinations of levels for the preceding variables
+    levels_list <- tree$tree[rev(preceding_vars)]
+    combinations <- expand.grid(levels_list)
+    
+    # Process all numerical variables
+    numeric_vars <- names(data)[sapply(data, is.numeric)]
+    
+    # Initialize nested lists for this target variable
+    means[[target_var]] <- list()
+    vars[[target_var]] <- list()
+    sizes[[target_var]] <- list()
+    
+    # Iterate over continuous (numeric) variables
+    for (num_var in numeric_vars) {
+      # Initialize storage for this numeric variable
+      means[[target_var]][[num_var]] <- c()
+      vars[[target_var]][[num_var]] <- c()
+      sizes[[target_var]][[num_var]] <- c()
+      
+      # Iterate through combinations of preceding variables
+      for (i in 1:nrow(combinations)) {
+        # Subset the data based on the combination
+        subset_condition <- TRUE
+        for (var in preceding_vars) {
+          subset_condition <- subset_condition & (data[[var]] == combinations[[var]][i])
+        }
+        subset_data <- data[subset_condition, ]
+        
+        # Compute statistics
+        mean_value <- mean(subset_data[[num_var]], na.rm = TRUE)
+        sum_squared_diff <- sum((subset_data[[num_var]] - mean_value)^2, na.rm = TRUE)
+        sample_size <- nrow(subset_data)
+        
+        # Store results for this numeric variable and combination
+        means[[target_var]][[num_var]] <- c(means[[target_var]][[num_var]], mean_value)
+        vars[[target_var]][[num_var]] <- c(vars[[target_var]][[num_var]], sum_squared_diff)
+        sizes[[target_var]][[num_var]] <- c(sizes[[target_var]][[num_var]], sample_size)
+      }
+    }
+  }
+  
+  
+  #Compute the marginals for each node for each continuous variable
+  log_margs <- vector("list", length = n_v)
+  for(iv in 1:n_v){
+    # Initialize nested lists for this target variable
+    log_margs[[iv]] <- list()
+    # Iterate over continuous (numeric) variables
+    for (num_var in numeric_vars) {
+      log_margs[[iv]][[num_var]] <- rep(-Inf,length(alloc_v[[iv]]))
+      sizes_iv <- sizes[[iv]][[num_var]]
+      means_iv <- means[[iv]][[num_var]]
+      vars_iv <- vars[[iv]][[num_var]]
+      for(k in 1:length(alloc_v[[iv]])){
+        sizes_ivi <- sizes_iv[k]
+        means_ivi <- means_iv[k]
+        vars_ivi <- vars_iv[k]
+        log_margs[[iv]][[num_var]][k] <- predloglik(alpha0,beta0,kappa0,means_ivi,vars_ivi,sizes_ivi)
+      }
+    }
+  }
   
   SM_accept <- 0
   SM_count <- 0
@@ -98,6 +182,12 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
       
       dist_H_iv <- dist_H[[iv]]
       
+      means_iv <- means[[iv]]
+      vars_iv <- vars[[iv]]
+      sizes_iv <- sizes[[iv]]
+      log_margs_iv <- log_margs[[iv]]
+      
+      
       if(update_CRP){
         for(i in 1:N_iv){
           
@@ -122,6 +212,12 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
           
           f_k[1] <- lgamma(sum(pr_new)) - sum(lgamma(pr_new)) + sum(lgamma(tt_new + pr_new)) - lgamma(sum(tt_new + pr_new)) 
           
+          #Contribution of continuous variables (q_Z in total)
+          g_k <- matrix(-Inf, q_Z, K_iv+1)
+          for(i_nums in 1:q_Z){
+            g_k[i_nums,1] <- log_margs_iv[[i_nums]][i]
+          }
+          
           for(k in 1:K_iv){
             
             #Probability of choosing an existing cluster
@@ -141,6 +237,35 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
             tt_k_minus_i <- tt_k - tree_k$ctables[[v]][i, ]
             
             f_k[k + 1] <- lgamma(sum(pr_k + tt_k_minus_i)) - sum(lgamma(pr_k + tt_k_minus_i)) + sum(lgamma(tt_k + pr_k)) - lgamma(sum(tt_k + pr_k))
+            
+            if(aux_i != k){
+              for(i_nums in 1:q_Z){
+                sizes_iv_ix <- sizes_iv[[i_nums]][ix]
+                means_iv_ix <- means_iv[[i_nums]][ix]
+                vars_iv_ix <- vars_iv[[i_nums]][ix]
+                
+                sizes_new <- sum(sizes_iv_ix)
+                means_new <- sum(sizes_iv_ix * means_iv_ix) / sizes_new
+                vars_new <- sum(vars_iv_ix) + sum(sizes_iv_ix * (means_iv_ix - means_new)^2)
+                
+                ixi <- ix
+                ixi[i] <- FALSE
+                sizes_raw <- sizes_iv[[i_nums]][ixi]
+                means_raw <- means_iv[[i_nums]][ixi]
+                vars_raw <- vars_iv[[i_nums]][ixi]
+                
+                # Compute total sizes
+                sizes_old <- sum(sizes_raw)
+                
+                # Compute combined means
+                means_old <- sum(sizes_raw * means_raw) / sizes_old
+                
+                # Compute combined variances
+                vars_old <- sum(vars_raw) + sum(sizes_raw * (means_raw - means_old)^2)
+                
+                g_k[i_nums,k+1] <- predloglik(alpha0,beta0,kappa0,means_new,vars_new,sizes_new) - predloglik(alpha0,beta0,kappa0,means_old,vars_old,sizes_old)
+              }
+            }
           }
           
           dist_H_j <- rep(0,K_iv)
@@ -157,7 +282,7 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
             w[aux_i + 1] = 0
           }
           
-          fg_k <- f_k + c(0,- csi * dist_H_j)
+          fg_k <- f_k + c(0,- csi * dist_H_j) + colSums(lambda_Z * g_k)
           
           fg_k = exp(fg_k-max(fg_k)) * w
           fg_k = fg_k/sum(fg_k)
@@ -230,6 +355,21 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
           #Sum of pairwise Hamming distances between elements of cluster
           dist_a <- sum(dist_H_iv[ixa,ixa])/2
           
+          #Continuous covariates
+          g_a <- 0
+          for(i_nums in 1:q_Z){
+            sizes_iv_ixa <- sizes_iv[[i_nums]][ixa]
+            means_iv_ixa <- means_iv[[i_nums]][ixa]
+            vars_iv_ixa <- vars_iv[[i_nums]][ixa]
+            
+            sizes_a <- sum(sizes_iv_ixa)
+            means_a <- sum(sizes_iv_ixa * means_iv_ixa) / sizes_a
+            vars_a <- sum(vars_iv_ixa) + sum(sizes_iv_ixa * (means_iv_ixa - means_a)^2)
+            
+            g_a <- g_a + lambda_Z[i_nums] * predloglik(alpha0,beta0,kappa0,means_a,vars_a,sizes_a)
+          }
+          
+          
           
           
           ## Computing counts for the second stage
@@ -244,6 +384,20 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
           #Sum of pairwise Hamming distances between elements of cluster
           dist_b <- sum(dist_H_iv[ixb,ixb])/2
           
+          #Continuous covariates
+          g_b <- 0
+          for(i_nums in 1:q_Z){
+            sizes_iv_ixb <- sizes_iv[[i_nums]][ixb]
+            means_iv_ixb <- means_iv[[i_nums]][ixb]
+            vars_iv_ixb <- vars_iv[[i_nums]][ixb]
+            
+            sizes_b <- sum(sizes_iv_ixb)
+            means_b <- sum(sizes_iv_ixb * means_iv_ixb) / sizes_b
+            vars_b <- sum(vars_iv_ixb) + sum(sizes_iv_ixb * (means_iv_ixb - means_b)^2)
+            
+            g_b <- g_b + lambda_Z[i_nums] * predloglik(alpha0,beta0,kappa0,means_b,vars_b,sizes_b)
+          }
+          
           
           
           ## Computing counts for the second stage
@@ -257,6 +411,19 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
           #Sum of pairwise Hamming distances between elements of cluster
           dist_SM <- sum(dist_H_iv[ix_SM,ix_SM])/2
           
+          #Continuous covariates
+          g_SM <- 0
+          for(i_nums in 1:q_Z){
+            sizes_iv_ix_SM <- sizes_iv[[i_nums]][ix_SM]
+            means_iv_ix_SM <- means_iv[[i_nums]][ix_SM]
+            vars_iv_ix_SM <- vars_iv[[i_nums]][ix_SM]
+            
+            sizes_SM <- sum(sizes_iv_ix_SM)
+            means_SM <- sum(sizes_iv_ix_SM * means_iv_ix_SM) / sizes_SM
+            vars_SM <- sum(vars_iv_ix_SM) + sum(sizes_iv_ix_SM * (means_iv_ix_SM - means_SM)^2)
+            
+            g_SM <- g_SM + lambda_Z[i_nums] * predloglik(alpha0,beta0,kappa0,means_SM,vars_SM,sizes_SM)
+          }
           
           
           ## Compute terms for marginal likelihood ratio
@@ -269,6 +436,8 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
           log_ar_SM <- log_ar_SM + log(kappa) + lgamma(nj_new[merge_stage]) - lgamma(nj_iv[as.numeric(stage_1)]) - lgamma(nj_iv[as.numeric(stage_2)])
           #Add Hamming distance part
           log_ar_SM <- log_ar_SM  - csi*(dist_SM - dist_a - dist_b)
+          #Add continuous covariates part
+          log_ar_SM <- log_ar_SM  + (g_SM - g_a - g_b)
           
           ## Compute transition probability ratio
           log_ar_SM <- log_ar_SM + (nj_new[merge_stage]-2) * log(0.5)
@@ -307,6 +476,20 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
           #Sum of pairwise Hamming distances between elements of cluster
           dist_a <- sum(dist_H_iv[ixa,ixa])/2
           
+          #Continuous covariates
+          g_a <- 0
+          for(i_nums in 1:q_Z){
+            sizes_iv_ixa <- sizes_iv[[i_nums]][ixa]
+            means_iv_ixa <- means_iv[[i_nums]][ixa]
+            vars_iv_ixa <- vars_iv[[i_nums]][ixa]
+            
+            sizes_a <- sum(sizes_iv_ixa)
+            means_a <- sum(sizes_iv_ixa * means_iv_ixa) / sizes_a
+            vars_a <- sum(vars_iv_ixa) + sum(sizes_iv_ixa * (means_iv_ixa - means_a)^2)
+            
+            g_a <- g_a + lambda_Z[i_nums] * predloglik(alpha0,beta0,kappa0,means_a,vars_a,sizes_a)
+          }
+          
           
           ## Computing counts for the second stage
           ixb <- tree_new$stages[[v]] == current_stage
@@ -319,8 +502,22 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
           #Sum of pairwise Hamming distances between elements of cluster
           dist_b <- sum(dist_H_iv[ixb,ixb])/2
           
-
-                    
+          #Continuous covariates
+          g_b <- 0
+          for(i_nums in 1:q_Z){
+            sizes_iv_ixb <- sizes_iv[[i_nums]][ixb]
+            means_iv_ixb <- means_iv[[i_nums]][ixb]
+            vars_iv_ixb <- vars_iv[[i_nums]][ixb]
+            
+            sizes_b <- sum(sizes_iv_ixb)
+            means_b <- sum(sizes_iv_ixb * means_iv_ixb) / sizes_b
+            vars_b <- sum(vars_iv_ixb) + sum(sizes_iv_ixb * (means_iv_ixb - means_b)^2)
+            
+            g_b <- g_b + lambda_Z[i_nums] * predloglik(alpha0,beta0,kappa0,means_b,vars_b,sizes_b)
+          }
+          
+          
+          
           ## Computing counts for the second stage
           ix_SM <- (tree$stages[[v]] == current_stage)
           pr_SM <- priors_iv
@@ -331,6 +528,20 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
           }
           #Sum of pairwise Hamming distances between elements of cluster
           dist_SM <- sum(dist_H_iv[ix_SM,ix_SM])/2
+          
+          #Continuous covariates
+          g_SM <- 0
+          for(i_nums in 1:q_Z){
+            sizes_iv_ix_SM <- sizes_iv[[i_nums]][ix_SM]
+            means_iv_ix_SM <- means_iv[[i_nums]][ix_SM]
+            vars_iv_ix_SM <- vars_iv[[i_nums]][ix_SM]
+            
+            sizes_SM <- sum(sizes_iv_ix_SM)
+            means_SM <- sum(sizes_iv_ix_SM * means_iv_ix_SM) / sizes_SM
+            vars_SM <- sum(vars_iv_ix_SM) + sum(sizes_iv_ix_SM * (means_iv_ix_SM - means_SM)^2)
+            
+            g_SM <- g_SM + lambda_Z[i_nums] * predloglik(alpha0,beta0,kappa0,means_SM,vars_SM,sizes_SM)
+          }
           
           
           
@@ -344,6 +555,8 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
           log_ar_SM <- log_ar_SM - log(kappa) + lgamma(nj_new[current_stage]) - lgamma(nj_iv[current_stage]) - lgamma(nj_iv[new_stage])
           #Add Hamming distance part
           log_ar_SM <- log_ar_SM  - csi*(- dist_SM + dist_a + dist_b)
+          #Add continuous covariates part
+          log_ar_SM <- log_ar_SM  - (g_SM - g_a - g_b)
           
           ## Compute transition probability ratio
           log_ar_SM <- log_ar_SM - (nj_iv[current_stage]-2) * log(0.5)
@@ -375,15 +588,12 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
       nj_v[[iv]] <- nj_iv
       K_v[iv] <- K_iv
       
-      
-      
-      
     }
     
     
-    #if(it%%10 == 0){
-    #  print(K_v)  
-   # }
+    if(it%%10 == 0){
+      print(K_v)  
+    }
     
     if((it > n_burn) & ((it - n_burn)%%thin == 0)){
       iter <- (it - n_burn)%/%thin
@@ -394,17 +604,17 @@ mcmc_crp_ppmx_Hamming <- function(tree, data, n_save, n_burn = 0, thin = 1, a = 
       chain_out[[iter]] <- stndnaming(sevt_fit(tree)) 
     }
     
-    #setTxtProgressBar(pb, it)
+    setTxtProgressBar(pb, it)
   }
   
-  #close(pb)
+  close(pb)
   
- # if(update_SM){
-   # print("merge ar")
-  #print(Merge_count / n_tot / n_v)
-   # print("split ar")
-  #  print(Split_count / n_tot / n_v)
- # }
+  if(update_SM){
+    print("merge ar")
+    print(Merge_count / n_tot / n_v)
+    print("split ar")
+    print(Split_count / n_tot / n_v)
+  }
   
   
   OUTPUT_MCMC <- list("alloc_v_out" = alloc_v_out, "nj_v_out" = nj_v_out, "K_v_out" = K_v_out, "chain_out" = chain_out)

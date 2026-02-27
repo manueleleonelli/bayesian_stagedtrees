@@ -1,7 +1,10 @@
 # FUNCTION FOR BAYESIAN CLUSTERING
+remotes::install_github("sarawade/mcclust.ext")
+library("salso")
+library("mcclust.ext")
 
 ## Create plots chatgpt
-process_variable <- function(v, result, estimate_B, estimate_VI, lower, upper, horizontal) {
+process_variable <- function(v, result, estimate_B, estimate_VI, lower, upper, horizontal, alpha = 0.1) {
   # Create a matrix for each 'v' across all 'result'
   mat <- t(sapply(result, function(res) res$stages[[v]]))
   
@@ -12,7 +15,7 @@ process_variable <- function(v, result, estimate_B, estimate_VI, lower, upper, h
   estimate_VI$stages[[v]] <- salso(mat, loss = "VI")
   
   # Compute credible ball for VI distance
-  ball <- credibleball(estimate_VI$stages[[v]], mat, c.dist = "VI", alpha = 0.1)
+  ball <- credibleball(estimate_VI$stages[[v]], mat, c.dist = "VI", alpha = alpha)
   
   # Update lower, upper, and horizontal stages
   lower$stages[[v]] <- ball$c.lowervert[1,]

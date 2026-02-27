@@ -1,9 +1,20 @@
-library(stagedtrees)
-library(ATbounds)
+if (packageVersion("stagedtrees") <= "2.3"){
+  # install devel version from github, 
+  # at time of writing it is at least 2.3.0.9999 
+  # otherwise some functions are not available
+  remotes::install_github("stagedtrees/stagedtrees")
+}
+library("stagedtrees")
+library("ATbounds")
+library("salso")
+
 source("effect_sevt.R")
 source("ppmx_hamming.R")
 source("ppmx_hamming_Z.R")
 source("bayesian_cluster_summary.R")
+
+dir.create("results/EFM", showWarnings = FALSE, recursive = TRUE)
+
 data <- EFM[,-6]
 data$cesarean <- factor(data$cesarean)
 data$monitor <- factor(data$monitor)
@@ -11,7 +22,9 @@ data$arrest <- factor(data$arrest)
 data$breech <- factor(data$breech)
 data$nullipar <- factor(data$nullipar)
 
-tree <- stndnaming(full(data,order = c("nullipar","breech","arrest","monitor","cesarean")))
+tree <- stndnaming(full(data,order = c("nullipar","breech",
+                                       "arrest","monitor",
+                                       "cesarean")))
 
 scope <- c("monitor","cesarean")
 n_v <- length(scope)
@@ -29,9 +42,11 @@ update_SM = TRUE
 update_CRP= TRUE
 
 set.seed(1988)
-model_hamming <- mcmc_crp_ppmx_Hamming(tree, data, n_save, n_burn = n_burn, thin = thin, a = a, 
-                              kappa = kappa, csi = csi,
-                              scope = scope, update_SM = update_SM, update_CRP= update_CRP)
+model_hamming <- mcmc_crp_ppmx_Hamming(tree, data, n_save, n_burn = n_burn,
+                                       thin = thin, a = a, 
+                                       kappa = kappa, csi = csi,
+                                       scope = scope, update_SM = update_SM,
+                                       update_CRP= update_CRP)
 
 
 result <- model_hamming$chain_out
@@ -45,7 +60,8 @@ y <- lapply(result,nstages)
 plot(1:length(y),y,type="l")
 
 
-## This should be already within the MCMC but to be sure I do it here too, just renaming
+# This should be already within the MCMC 
+# but to be sure I do it here too, just renaming
 result <- lapply(result,stndnaming)
 
 # Initialize the objects
@@ -53,7 +69,8 @@ estimate_VI <- estimate_B <- lower <- upper <- horizontal <- result[[1]]
 
 # Use lapply to loop over 'scope' and process each variable
 for (v in scope) {
-  results <- process_variable(v, result, estimate_B, estimate_VI, lower, upper, horizontal)
+  results <- process_variable(v, result, estimate_B, estimate_VI,
+                              lower, upper, horizontal)
   estimate_B <- results$estimate_B
   estimate_VI <- results$estimate_VI
   lower <- results$lower
@@ -67,10 +84,18 @@ plot(horizontal)
 plot(lower)
 plot(upper)
 
-ce_diffs <- sapply(result, function(model) {
-  diff(ce_randomized(sevt_fit(model, data), outcome = "cesarean", treatment = "monitor")[, 2])
+ATEs <- sapply(result, function(model) {
+  ATE(model, outcome = "cesarean", treatment = "monitor")
 })
-hist(ce_diffs)
+write.csv(ATEs, file = "results/EFM/ATE_EFM.csv")
+hist(ATEs)
+
+ATTs <- sapply(result, function(model) {
+  ATT(model, outcome = "cesarean", treatment = "monitor")
+})
+write.csv(ATTs, file = "results/EFM/ATE_EFM.csv")
+
+hist(ATTs)
 
 
 # Initialize a list to store the differences for each result

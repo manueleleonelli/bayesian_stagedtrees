@@ -1,78 +1,59 @@
+if (packageVersion("stagedtrees") <= "2.3"){
+  # install devel version from github, 
+  # at time of writing it is at least 2.3.0.9999 
+  # otherwise some functions are not available
+  remotes::install_github("stagedtrees/stagedtrees")
+}
 library("stagedtrees")
 
-randomize <- function(object, var, p = NULL, ignore = object$name_unobserved){
-  kk <- length(object$tree[[var]])
-  if (is.null(p)){
-    p <- rep.int(1/kk, kk)
+# we directly use predict.sevt 
+# which can handle now marginalization
+
+#' function for ATE
+#'
+#' @param object a fitted staged event tree
+#' @param outcome the name of the outcome variable
+#' @param treatment the name of the treatment variable 
+#' @returns The Average treatmen effect estimated 
+#'          from the model in \code{object}.
+#' @details
+#' This function assume that the second level 
+#' of the treament variable is the treated and that the 
+#' second level of the outcome variable 
+#' is the positive outcome (e.g. survived)
+#' @examples
+#' model <- Titanic |> full(join_unobserved = FALSE, lambda = 1) |> stages_bhc()
+#' outcome <- "Survived"
+#' treatment <- "Sex"
+#' ATE(model, outcome, treatment)
+ATE <- function(object, outcome, treatment){
+  object0 <- randomize_sevt(object, treatment)
+  diff(predict(object = object0, newdata = data.frame(object$tree[treatment]),
+               class = outcome, prob = TRUE)[,2])
+}
+
+########## for treated sub population
+## this return the probabilities of the outcomes under the
+## two possible treatments for units in the treated group
+ATT <- function(object, outcome, treatment){
+  ## we use as x pre treatment variables affecting the treatment
+  parents <- as_parentslist(object, silent = TRUE)[[treatment]]$parents
+  ct <- list(object$tree[[treatment]][2]) ## second level is treated
+  names(ct) <- treatment
+  object0 <- randomize_sevt(object, treatment)
+  if (length(parents) == 0 ){
+    ## no variable affect treatment we just default to ATE
+    return(ATE(object, outcome, treatment))
+    } else {
+    xx <- expand.grid(object$tree[parents])
+    res <- lapply(seq_len(nrow(xx)), function(ii){
+      x <- xx[ii,,drop=FALSE]
+      predict(object0, class = outcome,
+              newdata = data.frame(x, as.data.frame(object$tree[treatment]), row.names = NULL),
+              prob = TRUE) * prob(object, x, conditional_on = ct)
+    })
+    diff(Reduce("+", x = res, accumulate = FALSE)[,2])
   }
-  names(p) <- object$tree[[var]]
-  tmp <- object$stages[[var]]
-  object$stages[[var]][!(tmp %in% ignore)] <- "randomized"
-  object$prob[[var]] <- c(list(randomized = p), object$prob[[var]][ignore])
-  object$prob[[var]] <- object$prob[[var]][!is.na(names(object$prob[[var]]))] 
-  return(object)
 }
 
-
-ce_randomized <- function(object, outcome, treatment){
-  object0 <- randomize(object, treatment)
-  xx <- c(NA)
-  names(xx) <- outcome
-  res <- sapply(object$tree[[outcome]], function(vo){
-    xx[1] <- vo
-    prob(object0, xx, conditional_on = as.data.frame(object$tree[treatment]), na0 = FALSE)
-  })
-  dimnames(res) <- object$tree[c(treatment, outcome)]
-  return(res)
-}
-
-get_stages_ <- function(x, i, context){
-  tree <- x$tree
-  ixv <- which(i == names(tree))
-  tree1 <- tree[1:(ixv - 1)]
-  tree1[names(context)] <- as.list(context)
-  more <- rev(expand.grid(rev(tree1), stringsAsFactors = FALSE))
-  ixs <- vapply(1:nrow(more), function(rr) {
-    cpath <- unlist(more[rr, ])
-    stagedtrees:::tree_idx(cpath, tree)
-  }, FUN.VALUE = 1)
-  return(ixs)
-}
-
-ce_propscorestrat <- function(model, outcome, treatment, ignore = model$name_unobserved){
-  stgs <- unique(model$stages[[treatment]])
-  stgs <- stgs[!(stgs %in% ignore)]
-  strata <- sapply(stgs, function(stage){
-    get_path(model, treatment, stage)
-  }, simplify = FALSE)
-  
-  tmp <- model$stages[[outcome]]
-  kk <- sum(! (tmp %in% ignore))
-  model$stages[[outcome]][! (tmp %in% ignore)] <- paste0(1:kk)
-  for (i in 1:length(strata)){
-    nn <- names(strata)[i]
-    for (j in 1:nrow(strata[[i]])){
-      todo <- get_stages_(model, outcome, strata[[i]][j,])
-      model$stages[[outcome]][todo] <- paste0(nn, 1:length(todo))
-    }
-  }
-  
-  model <- sevt_fit(model)
-  
-  probstrata <- sapply(strata, function(str) sum(prob(model, str)))
-  cestrata <- sapply(names(strata), function(ns){
-    str <- strata[[ns]]
-    todo <- model$stages[[outcome]][get_stages_(model, outcome, str[1,])]
-    A <- simplify2array(model$prob[[outcome]][todo])
-    colnames(A) <- model$tree$Treatment
-    A * probstrata[ns]
-  }, simplify = FALSE)
-  
-  cestrata <- simplify2array(cestrata)
-  
-  wok <- apply(cestrata, 3, function(xx) !any(is.na(xx)))
-  
-  t(apply(cestrata[,,wok], c(1,2), sum) / sum(probstrata[wok]))
-  
-}
 

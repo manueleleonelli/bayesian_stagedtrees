@@ -1,12 +1,28 @@
-library(stagedtrees)
+if (packageVersion("stagedtrees") <= "2.3"){
+  # install devel version from github, 
+  # at time of writing it is at least 2.3.0.9999 
+  # otherwise some functions are not available
+  remotes::install_github("stagedtrees/stagedtrees")
+}
+library("stagedtrees")
 library(dplyr)
-data <- read.csv2("BC_cardiotox_clinical_variables.csv")
+
 source("effect_sevt.R")
 source("ppmx_hamming.R")
 source("ppmx_hamming_Z.R")
 source("bayesian_cluster_summary.R")
 
+# create output data
+dir.create("results/CTRCD", showWarnings = FALSE, recursive = TRUE)
+
+
+## data available from (last accessed 27/02/2026)
+## https://figshare.com/articles/dataset/BC_cardiotox_A_cardiotoxicity_dataset_for_breast_cancer_patients/22650748/4?file=41888007
+data <- read.csv2("data/BC_cardiotox_clinical_variables.csv")
+
 ## ANALISI STAGED TREE HAMMING
+
+# preprocess variables
 data$past_treat <- as.numeric(data$ACprev == 1 | 
                                 data$antiHER2prev == 1 |
                                 data$RTprev == 1)
@@ -21,11 +37,17 @@ data$past_treat <- factor(data$past_treat)
 data$smok <- factor(data$smok)
 data$BMI <- data$weight / ( (data$height / 100)^2 )
 
+# select variables
 d <- data |> dplyr::select(CTRCD,AC,HTA,DL,past_treat)
 
+# remove missing data
 d <- na.omit(d)
+
+# create event tree and 
+# fit the full probability tree with given order
 tree <- stndnaming(full(d, order = c("past_treat","DL","HTA","AC","CTRCD")))
 
+# define parameters for the MCMC
 scope <- c("AC","CTRCD")
 n_v <- length(scope)
 a <- 1
@@ -51,11 +73,11 @@ result <- model_hamming$chain_out
 
 ## Check some measure of convergence
 x <- lapply(result,logLik)
-plot(1:length(x),x,type="l")
+plot(1:length(x),x,type="l", main = "logLik")
 
 nstages <- function(tree) sum(unlist(lapply(tree$stages,function(i) length(unique(i)))))
 y <- lapply(result,nstages)
-plot(1:length(y),y,type="l")
+plot(1:length(y),y,type="l", main = "nstages")
 
 
 ## This should be already within the MCMC but to be sure I do it here too, just renaming
@@ -74,16 +96,30 @@ for (v in scope) {
   horizontal <- results$horizontal
 }
 
-par(mfrow=c(2,2),mar=c(0,0,0,0))
-plot(estimate_VI)
-plot(horizontal)
-plot(lower)
-plot(upper)
+par(mfrow=c(2,2),mar=c(1,1,1,1))
+plot(estimate_VI, main = "estimate_VI", var_names = FALSE) 
+plot(horizontal, main = "horizontal", var_names = FALSE)
+plot(lower, main = "lower", var_names = FALSE)
+plot(upper, main = "upper", var_names = FALSE)
 
-ce_diffs <- sapply(result, function(model) {
-   diff(ce_randomized(sevt_fit(model, d), outcome = "CTRCD", treatment = "AC")[, 2])
+## compute ATE and ATT for each model in the output of the MCMC
+# ATE
+ATEs <- sapply(result, function(model) {
+   ATE(model, outcome = "CTRCD", treatment = "AC")
    })
-hist(ce_diffs)
+
+
+write.csv(ATEs, file = "results/CTRCD/ATE_CTRCD.csv")
+
+# ATT
+ATTs <- sapply(result, function(model) {
+  ATT(model, outcome = "CTRCD", treatment = "AC")
+})
+write.csv(ATTs, file = "results/CTRCD/ATT_CTRCD.csv")
+
+par(mfrow=c(1,2),mar=c(1,1,1,1))
+hist(ATEs, main = "ATEs distribution")
+hist(ATTs, main = "ATTs distribution")
 
 
 ## ANALISI COVARIATES
@@ -144,10 +180,20 @@ plot(horizontal)
 plot(lower)
 plot(upper)
 
-ce_diffs <- sapply(result, function(model) {
-  diff(ce_randomized(sevt_fit(model, d,lambda=0.1), outcome = "CTRCD", treatment = "AC")[, 2])
+## compute ATE and ATT for each model in the output of the MCMC
+# ATE
+ATEs_cov <- sapply(result, function(model) {
+  ATE(model, outcome = "CTRCD", treatment = "AC")
 })
-hist(ce_diffs)
+
+
+write.csv(ATEs_cov, file = "results/CTRCD/ATE_CTRCD_cov.csv")
+
+# ATT
+ATTs_cov <- sapply(result, function(model) {
+  ATT(model, outcome = "CTRCD", treatment = "AC")
+})
+write.csv(ATTs_cov, file = "results/CTRCD/ATT_CTRCD_cov.csv")
 
 
 

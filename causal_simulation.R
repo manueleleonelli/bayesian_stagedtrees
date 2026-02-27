@@ -1,13 +1,21 @@
-library(stagedtrees)
+if (packageVersion("stagedtrees") <= "2.3"){
+  # install devel version from github, 
+  # at time of writing it is at least 2.3.0.9999 
+  # otherwise some functions are not available
+  remotes::install_github("stagedtrees/stagedtrees")
+}
+library("stagedtrees")
 library("e1071")
-library(salso)
-library(fossil)
+library("salso")
+library("fossil")
+
+
 source("effect_sevt.R")
-source("ppmx_hamming.R")
-source("ppmx_hamming_Z.R")
+source("ppmx_Hamming.R")
+source("ppmx_Hamming_Z.R")
 source("bayesian_cluster_summary.R")
 
-## Definisco l'albero
+## define the event tree
 tree_def <- list(X1 = c("no","yes"),
                  X2 = c("no","yes"),
                  X3 = c("no","yes"),
@@ -15,9 +23,10 @@ tree_def <- list(X1 = c("no","yes"),
                  X5 = c("no","yes"),
                  X6 = c("no","yes"))
 
-## Lo creo come oggetto per pacchetto stagedtrees
+## define the sevt object 
 tree_def <- sevt(tree_def, full= F)
 
+## define the stage structures
 tree_def$stages$X2 <- c("1","2")
 tree_def$stages$X3 <- c("1","2","1","3")
 tree_def$stages$X4 <- c("1","2","3","4","1","1","3","4")
@@ -231,8 +240,8 @@ eval_effect_errors <- function(reference_tree,
                                cate_fun = cate16_pairs,
                                cate_name = "CATE") {
   # ATE abs error
-  ref_ate <- diff(ce_randomized(reference_tree, outcome = outcome, treatment = treatment)[, 2])
-  est_ate <- diff(ce_randomized(estimated_tree,  outcome = outcome, treatment = treatment)[, 2])
+  ref_ate <- ATE(reference_tree, outcome = outcome, treatment = treatment)
+  est_ate <- ATE(estimated_tree,  outcome = outcome, treatment = treatment)
   ate_abs_err <- abs(est_ate - ref_ate)
   
   # CATE abs errors: join on covariate columns to be safe
@@ -377,7 +386,7 @@ out <- run_ppmx_pipeline(
 # Access results
 out$estimates$VI_fit
 
-ATE <- diff(ce_randomized(tree_def, outcome = "X6", treatment = "X5")[, 2])
+ATE <- ATE(tree_def, outcome = "X6", treatment = "X5")
 CATEs <- cate16_pairs(tree_def)
-abs(diff(ce_randomized(out$estimates$VI_fit, outcome = "X6", treatment = "X5")[, 2])- ATE)
+abs(ATE(out$estimates$VI_fit, outcome = "X6", treatment = "X5")- ATE)
 abs(cate16_pairs(out$estimates$VI_fit)[,5]-CATEs[,5])
